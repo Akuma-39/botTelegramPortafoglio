@@ -3,12 +3,58 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Con
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+import asyncpg
+import csv
+import io
 
+
+async def connect_db():
+    return await asyncpg.create_pool(os.getenv("DATABASE_URL"))
+
+async def crea_tabella(pool):
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS transazioni (
+            id SERIAL PRIMARY KEY,
+            user_id BIGINT,
+            descrizione TEXT,
+            importo NUMERIC,
+            data TIMESTAMP DEFAULT NOW()
+        )
+    """)
 # Stati della conversazione
 DESCRIZIONE, IMPORTO = range(2)
 
 # Lista globale per memorizzare le spese
 spese = []
+
+# Funzione per esportare le spese in CSV
+async def esporta(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    pool = context.application.bot_data["db_pool"]
+
+    transazioni = await pool.fetch(
+        "SELECT descrizione, importo, data FROM transazioni WHERE user_id = $1 ORDER BY data DESC",
+        user_id
+    )
+
+    if not transazioni:
+        await update.message.reply_text("📂 Nessuna transazione da esportare.")
+        return
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Descrizione", "Importo", "Data"])
+
+    for t in transazioni:
+        writer.writerow([t["descrizione"], float(t["importo"]), t["data"].strftime("%Y-%m-%d %H:%M")])
+
+    output.seek(0)
+
+    await update.message.reply_document(
+        document=io.BytesIO(output.getvalue().encode()),
+        filename="transazioni.csv",
+        caption="📤 Ecco il tuo file CSV con le transazioni"
+    )
 
 # Comando /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -32,6 +78,8 @@ async def set_bot_commands(app):
         BotCommand("riepilogo", "Mostra il riepilogo delle spese"),
         BotCommand("annulla", "Annulla l'operazione corrente"),
         BotCommand("gestisci", "Gestisci una transazione"),
+        BotCommand("esporta", "Esporta le transazioni in CSV"),
+
     ]
     await app.bot.set_my_commands(commands)
 
@@ -57,26 +105,49 @@ async def importo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         importo = float(update.message.text)
         descrizione = context.user_data['descrizione']
         tipo = context.user_data.get('tipo')
+        user_id = update.effective_user.id
+
+        # Se è una spesa, rendi l'importo negativo
         if tipo == 'spesa':
-            spese.append((descrizione, -importo))
-            await update.message.reply_text(f"✅ Spesa aggiunta: {descrizione} - {importo:.2f} €")
+            importo = -abs(importo)
         else:
-            spese.append((descrizione, importo))
-            await update.message.reply_text(f"✅ Entrata aggiunta: {descrizione} + {importo:.2f} €")
+            importo = abs(importo)
+
+        pool = context.application.bot_data["db_pool"]
+        await pool.execute(
+            "INSERT INTO transazioni (user_id, descrizione, importo) VALUES ($1, $2, $3)",
+            user_id, descrizione, importo
+        )
+
+        await update.message.reply_text(
+            f"✅ {tipo.capitalize()} aggiunta: {descrizione} {importo:+.2f} €"
+        )
         return ConversationHandler.END
+
     except ValueError:
         await update.message.reply_text("Importo non valido. Per favore, scrivi un numero.")
         return IMPORTO
 
+
 # /gestisci
 async def gestisci(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not spese:
+    user_id = update.effective_user.id
+    pool = context.application.bot_data["db_pool"]
+
+    transazioni = await pool.fetch(
+        "SELECT id, descrizione, importo FROM transazioni WHERE user_id = $1 ORDER BY data DESC",
+        user_id
+    )
+
+    if not transazioni:
         await update.message.reply_text("📂 *Non ci sono transazioni da gestire.*", parse_mode="Markdown")
         return
 
+    context.user_data['transazioni'] = transazioni  # salviamo in memoria per callback successive
+
     keyboard = [
-        [InlineKeyboardButton(f"{descrizione}: {'-' if importo < 0 else ''}{abs(importo):.2f} €", callback_data=f"gestisci_{i}")]
-        for i, (descrizione, importo) in enumerate(spese)
+        [InlineKeyboardButton(f"{t['descrizione']}: {'-' if t['importo'] < 0 else ''}{abs(t['importo']):.2f} €", callback_data=f"gestisci_{i}")]
+        for i, t in enumerate(transazioni)
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
@@ -85,7 +156,7 @@ async def gestisci(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-# Callback
+
 async def gestisci_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -93,7 +164,14 @@ async def gestisci_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith("gestisci_"):
         indice = int(data.split("_")[1])
+        transazioni = context.user_data.get('transazioni')
+        if not transazioni or indice >= len(transazioni):
+            await query.edit_message_text("⚠️ Errore: transazione non trovata.")
+            return
+
+        transazione = transazioni[indice]
         context.user_data['indice'] = indice
+        context.user_data['transazione_id'] = transazione['id']
 
         keyboard = [
             [InlineKeyboardButton("✏️ Modifica", callback_data="modifica"),
@@ -102,7 +180,7 @@ async def gestisci_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(
             f"🔍 *Hai selezionato:*\n"
-            f"• *{spese[indice][0]}*: {'-' if spese[indice][1] < 0 else ''}{abs(spese[indice][1]):.2f} €\n\n"
+            f"• *{transazione['descrizione']}*: {'-' if transazione['importo'] < 0 else ''}{abs(transazione['importo']):.2f} €\n\n"
             "Cosa vuoi fare?",
             reply_markup=reply_markup,
             parse_mode="Markdown"
@@ -116,43 +194,48 @@ async def gestisci_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return IMPORTO
 
     elif data == "elimina":
-        indice = context.user_data.get('indice')
-        if indice is not None:
-            transazione = spese.pop(indice)
-            await query.edit_message_text(
-                f"🗑️ *Transazione eliminata:*\n"
-                f"• *{transazione[0]}*: {'-' if transazione[1] < 0 else ''}{abs(transazione[1]):.2f} €",
-                parse_mode="Markdown"
-            )
+        transazione_id = context.user_data.get('transazione_id')
+        if transazione_id:
+            pool = context.application.bot_data["db_pool"]
+            await pool.execute("DELETE FROM transazioni WHERE id = $1", transazione_id)
+            await query.edit_message_text("🗑️ *Transazione eliminata con successo!*", parse_mode="Markdown")
         return ConversationHandler.END
+
 
 # Aggiorna transazione
 async def aggiorna_transazione(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        if 'indice' not in context.user_data:
+        dati = update.message.text.split()
+        transazione_id = context.user_data.get('transazione_id')
+        transazioni = context.user_data.get('transazioni')
+        indice = context.user_data.get('indice')
+
+        if transazione_id is None or transazioni is None or indice is None:
             await update.message.reply_text("❌ Errore: Nessuna transazione selezionata per la modifica.")
             return ConversationHandler.END
 
-        dati = update.message.text.split()
-        indice = context.user_data['indice']
+        pool = context.application.bot_data["db_pool"]
 
         if len(dati) == 1:
             importo = float(dati[0])
-            importo = -abs(importo) if spese[indice][1] < 0 else abs(importo)
-            spese[indice] = (spese[indice][0], importo)
-            await update.message.reply_text(
-                f"✅ Importo aggiornato:\n• *{spese[indice][0]}*: {importo:.2f} €",
-                parse_mode="Markdown"
-            )
+            vecchio_importo = transazioni[indice]['importo']
+            importo = -abs(importo) if vecchio_importo < 0 else abs(importo)
+
+            await pool.execute("UPDATE transazioni SET importo = $1 WHERE id = $2", importo, transazione_id)
+            await update.message.reply_text(f"✅ Importo aggiornato: {importo:.2f} €")
+
         elif len(dati) >= 2:
             descrizione = " ".join(dati[:-1])
             importo = float(dati[-1])
-            importo = -abs(importo) if spese[indice][1] < 0 else abs(importo)
-            spese[indice] = (descrizione, importo)
-            await update.message.reply_text(
-                f"✅ Transazione aggiornata:\n• *{descrizione}*: {importo:.2f} €",
-                parse_mode="Markdown"
+            vecchio_importo = transazioni[indice]['importo']
+            importo = -abs(importo) if vecchio_importo < 0 else abs(importo)
+
+            await pool.execute(
+                "UPDATE transazioni SET descrizione = $1, importo = $2 WHERE id = $3",
+                descrizione, importo, transazione_id
             )
+            await update.message.reply_text(f"✅ Transazione aggiornata: {descrizione} {importo:.2f} €")
+
         else:
             raise ValueError("Formato non valido.")
 
@@ -160,12 +243,13 @@ async def aggiorna_transazione(update: Update, context: ContextTypes.DEFAULT_TYP
 
     except ValueError:
         await update.message.reply_text(
-            "❌ Formato non valido. Per favore, scrivi:\n"
+            "❌ Formato non valido. Scrivi:\n"
             "• Solo l'importo (es. `50`)\n"
             "• Oppure descrizione e importo separati da uno spazio (es. `Cena 50`)",
             parse_mode="Markdown"
         )
         return IMPORTO
+
 
 # /annulla
 async def annulla(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -175,20 +259,29 @@ async def annulla(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # /riepilogo
 async def riepilogo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not spese:
+    user_id = update.effective_user.id
+    pool = context.application.bot_data["db_pool"]
+
+    transazioni = await pool.fetch(
+        "SELECT descrizione, importo FROM transazioni WHERE user_id = $1 ORDER BY data DESC",
+        user_id
+    )
+
+    if not transazioni:
         await update.message.reply_text("📂 *Nessuna transazione registrata.*", parse_mode="Markdown")
         return
 
-    totale = sum(importo for _, importo in spese)
+    totale = sum(t['importo'] for t in transazioni)
     lista = "\n".join([
-        f"• *{descrizione}*: {'-' if importo < 0 else ''}{abs(importo):.2f} €"
-        for descrizione, importo in spese
+        f"• *{t['descrizione']}*: {'-' if t['importo'] < 0 else ''}{abs(t['importo']):.2f} €"
+        for t in transazioni
     ])
     await update.message.reply_text(
         f"📊 *Riepilogo delle tue transazioni:*\n\n{lista}\n\n"
         f"💼 *Totale*: `{totale:.2f} €`",
         parse_mode="Markdown"
     )
+
 
 # Catch comandi non validi
 async def comando_non_riconosciuto(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -203,6 +296,9 @@ async def messaggio_generico(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 # Main
 async def main():
+    db_pool = await connect_db()
+    await crea_tabella(db_pool)
+    app.bot_data["db_pool"] = db_pool
     env_path = Path(__file__).parent / ".env"
     load_dotenv(dotenv_path=env_path)
 
@@ -216,6 +312,8 @@ async def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("riepilogo", riepilogo))
     app.add_handler(CommandHandler("gestisci", gestisci))
+    app.add_handler(CommandHandler("esporta", esporta))
+
 
     app.add_handler(ConversationHandler(
         entry_points=[CommandHandler("spesa", spesa_start)],
