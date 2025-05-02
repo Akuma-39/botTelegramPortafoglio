@@ -9,12 +9,7 @@ import io
 
 
 async def connect_db():
-    # Ottieni il valore della porta dal file .env, con un valore di default se non presente
-    db_url = os.getenv("DATABASE_URL")
-    db_port = os.getenv("DB_PORT", "5432")  # Se non è specificata, usa la porta 5432 di default
-    # Costruisci la stringa di connessione includendo la porta
-    db_url_with_port = db_url.replace("://", f":{db_port}@")
-    return await asyncpg.create_pool(db_url_with_port)
+    return await asyncpg.create_pool(os.getenv("DATABASE_URL"))
 
 async def crea_tabella(pool):
     await pool.execute("""
@@ -325,7 +320,6 @@ async def messaggio_generico(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # Main
 async def main():
     db_pool = await connect_db()
-    
     await crea_tabella(db_pool)  # Creazione della tabella se non esiste
     env_path = Path(__file__).parent / ".env"
     load_dotenv(dotenv_path=env_path)
