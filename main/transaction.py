@@ -9,7 +9,12 @@ import io
 
 
 async def connect_db():
-    return await asyncpg.create_pool(os.getenv("DATABASE_URL"))
+    # Ottieni il valore della porta dal file .env, con un valore di default se non presente
+    db_url = os.getenv("DATABASE_URL")
+    db_port = os.getenv("DB_PORT", "5432")  # Se non è specificata, usa la porta 5432 di default
+    # Costruisci la stringa di connessione includendo la porta
+    db_url_with_port = db_url.replace("://", f":{db_port}@")
+    return await asyncpg.create_pool(db_url_with_port)
 
 async def crea_tabella(pool):
     await pool.execute("""
@@ -208,6 +213,22 @@ async def gestisci_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
 
+    elif data == "modifica":
+        await query.edit_message_text(
+            "✏️ *Scrivi la nuova descrizione e il nuovo importo (o solo il nuovo importo) separati da uno spazio*",
+            parse_mode="Markdown"
+        )
+        return IMPORTO
+
+    elif data == "elimina":
+        transazione_id = context.user_data.get('transazione_id')
+        if transazione_id:
+            pool = context.application.bot_data["db_pool"]
+            await pool.execute("DELETE FROM transazioni WHERE id = $1", transazione_id)
+            await query.edit_message_text("🗑️ *Transazione eliminata con successo!*", parse_mode="Markdown")
+        return ConversationHandler.END
+
+
 # Aggiorna transazione
 async def aggiorna_transazione(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -243,7 +264,7 @@ async def aggiorna_transazione(update: Update, context: ContextTypes.DEFAULT_TYP
             await update.message.reply_text(f"✅ Transazione aggiornata: {descrizione} {importo:.2f} €")
 
         else:
-            raise ValueError("Formato non valido.")
+            raise ValueError("Formato non valido. Mi servono almeno una descrizione e un importo.")
 
         return ConversationHandler.END
 
@@ -255,6 +276,7 @@ async def aggiorna_transazione(update: Update, context: ContextTypes.DEFAULT_TYP
             parse_mode="Markdown"
         )
         return IMPORTO
+
 
 
 # /annulla
@@ -303,7 +325,8 @@ async def messaggio_generico(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # Main
 async def main():
     db_pool = await connect_db()
-    await crea_tabella(db_pool)
+    
+    await crea_tabella(db_pool)  # Creazione della tabella se non esiste
     env_path = Path(__file__).parent / ".env"
     load_dotenv(dotenv_path=env_path)
 
@@ -312,7 +335,7 @@ async def main():
         raise ValueError("Il token del bot non è stato fornito.")
 
     app = ApplicationBuilder().token(TOKEN).build()
-    app.bot_data["db_pool"] = db_pool
+    app.bot_data["db_pool"] = db_pool  # Assegna il pool di connessione al database
 
     await set_bot_commands(app)
 
@@ -321,36 +344,26 @@ async def main():
     app.add_handler(CommandHandler("gestisci", gestisci))
     app.add_handler(CommandHandler("esporta", esporta))
 
-
     app.add_handler(ConversationHandler(
         entry_points=[CommandHandler("spesa", spesa_start)],
-        states={
-            DESCRIZIONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, descrizione)],
-            IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, importo)],
-        },
+        states={DESCRIZIONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, descrizione)],
+                IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, importo)]},
         fallbacks=[CommandHandler("annulla", annulla)],
     ))
 
     app.add_handler(ConversationHandler(
         entry_points=[CommandHandler("entrata", entrata_start)],
-        states={
-            DESCRIZIONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, descrizione)],
-            IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, importo)],
-        },
+        states={DESCRIZIONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, descrizione)],
+                IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, importo)]},
         fallbacks=[CommandHandler("annulla", annulla)],
     ))
 
     app.add_handler(ConversationHandler(
         entry_points=[CallbackQueryHandler(gestisci_callback)],
-        states={
-            IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, aggiorna_transazione)],
-        },
+        states={IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, aggiorna_transazione)]},
         fallbacks=[CommandHandler("annulla", annulla)],
         per_message=False,
     ))
-
-    app.add_handler(MessageHandler(filters.COMMAND, comando_non_riconosciuto))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, messaggio_generico))
 
     print("🤖 Bot in esecuzione...")
     await app.run_polling()
@@ -360,3 +373,4 @@ if __name__ == "__main__":
     nest_asyncio.apply()
     import asyncio
     asyncio.run(main())
+
