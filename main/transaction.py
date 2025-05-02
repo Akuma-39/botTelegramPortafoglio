@@ -102,31 +102,37 @@ async def descrizione(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def importo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        importo = float(update.message.text)
-        descrizione = context.user_data['descrizione']
-        tipo = context.user_data.get('tipo')
-        user_id = update.effective_user.id
+        importo = float(update.message.text)  # Converte il testo in un numero decimale
+        descrizione = context.user_data['descrizione']  # Prendi la descrizione dal contesto
+        tipo = context.user_data.get('tipo')  # Tipo (spesa o entrata)
+        user_id = update.effective_user.id  # ID dell'utente
 
-        # Se è una spesa, rendi l'importo negativo
+        # Se è una spesa, l'importo sarà negativo, altrimenti positivo
         if tipo == 'spesa':
-            importo = -abs(importo)
+            importo = -abs(importo)  # Imposta l'importo come negativo per una spesa
         else:
-            importo = abs(importo)
+            importo = abs(importo)  # Assicura che l'importo sia positivo per un'entrata
 
+        # Connessione al pool DB
         pool = context.application.bot_data["db_pool"]
+        # Inserisci la transazione nel DB
         await pool.execute(
             "INSERT INTO transazioni (user_id, descrizione, importo) VALUES ($1, $2, $3)",
             user_id, descrizione, importo
         )
 
+        # Risposta utente
         await update.message.reply_text(
-            f"✅ {tipo.capitalize()} aggiunta: {descrizione} {importo:+.2f} €"
+            f"✅ {'Spesa' if tipo == 'spesa' else 'Entrata'} aggiunta: {descrizione} {importo:+.2f} €"
         )
-        return ConversationHandler.END
+
+        return ConversationHandler.END  # Termina la conversazione
 
     except ValueError:
+        # Se l'importo non è valido
         await update.message.reply_text("Importo non valido. Per favore, scrivi un numero.")
         return IMPORTO
+
 
 
 # /gestisci
@@ -298,7 +304,6 @@ async def messaggio_generico(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def main():
     db_pool = await connect_db()
     await crea_tabella(db_pool)
-    app.bot_data["db_pool"] = db_pool
     env_path = Path(__file__).parent / ".env"
     load_dotenv(dotenv_path=env_path)
 
@@ -307,6 +312,8 @@ async def main():
         raise ValueError("Il token del bot non è stato fornito.")
 
     app = ApplicationBuilder().token(TOKEN).build()
+    app.bot_data["db_pool"] = db_pool
+
     await set_bot_commands(app)
 
     app.add_handler(CommandHandler("start", start))
