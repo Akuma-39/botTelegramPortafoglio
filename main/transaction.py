@@ -322,67 +322,63 @@ async def messaggio_generico(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 # Main
 async def main():
+    db_pool = await connect_db()
+    await crea_tabella(db_pool)  # Creazione della tabella se non esiste
+    env_path = Path(__file__).parent / ".env"
+    load_dotenv(dotenv_path=env_path)
+
     TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
     if not TOKEN:
-        raise ValueError("Manca TELEGRAM_BOT_TOKEN")
-
-    db_pool = await connect_db()
-    await crea_tabella(db_pool)
+        raise ValueError("Il token del bot non è stato fornito.")
 
     app = ApplicationBuilder().token(TOKEN).build()
-    app.bot_data["db_pool"] = db_pool
+    app.bot_data["db_pool"] = db_pool  # Assegna il pool di connessione al database
+
     await set_bot_commands(app)
 
-    # Handlers (uguali)
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("riepilogo", riepilogo))
     app.add_handler(CommandHandler("gestisci", gestisci))
     app.add_handler(CommandHandler("esporta", esporta))
-    app.add_handler(CommandHandler("annulla", annulla))
-    app.add_handler(CallbackQueryHandler(gestisci_callback))
-    app.add_handler(MessageHandler(filters.COMMAND, comando_non_riconosciuto))
 
-    # ConversationHandlers (uguali)
     app.add_handler(ConversationHandler(
         entry_points=[CommandHandler("spesa", spesa_start)],
-        states={
-            DESCRIZIONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, descrizione)],
-            IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, importo)],
-        },
-        fallbacks=[CommandHandler("annulla", annulla)]
+        states={DESCRIZIONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, descrizione)],
+                IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, importo)]},
+        fallbacks=[CommandHandler("annulla", annulla)],
     ))
 
     app.add_handler(ConversationHandler(
         entry_points=[CommandHandler("entrata", entrata_start)],
-        states={
-            DESCRIZIONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, descrizione)],
-            IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, importo)],
-        },
-        fallbacks=[CommandHandler("annulla", annulla)]
+        states={DESCRIZIONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, descrizione)],
+                IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, importo)]},
+        fallbacks=[CommandHandler("annulla", annulla)],
     ))
 
     app.add_handler(ConversationHandler(
         entry_points=[CallbackQueryHandler(gestisci_callback)],
-        states={
-            IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, aggiorna_transazione)],
-        },
+        states={IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, aggiorna_transazione)]},
         fallbacks=[CommandHandler("annulla", annulla)],
-        per_message=False
+        per_message=False,
     ))
 
-    # Avvia il bot in modalità polling
+
+    def start_dummy_server():
+        PORT = int(os.environ.get("PORT", 8080))  # Render richiede che usi la porta specificata
+        handler = http.server.SimpleHTTPRequestHandler
+        with socketserver.TCPServer(("", PORT), handler) as httpd:
+            print(f"Serving dummy HTTP on port {PORT}")
+            httpd.serve_forever()
+
+    threading.Thread(target=start_dummy_server, daemon=True).start()
+
+
+
+    print("🤖 Bot in esecuzione...")
     await app.run_polling()
 
-
 if __name__ == "__main__":
+    import nest_asyncio
+    nest_asyncio.apply()
     import asyncio
-    try:
-        asyncio.run(main())
-    except RuntimeError as e:
-        if "already running" in str(e):
-            # workaround per ambienti come Render, Jupyter, etc.
-            import nest_asyncio
-            nest_asyncio.apply()
-            asyncio.get_event_loop().run_until_complete(main())
-        else:
-            raise
+    asyncio.run(main())
