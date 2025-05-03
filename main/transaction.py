@@ -328,14 +328,18 @@ async def main():
     load_dotenv(dotenv_path=env_path)
 
     TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-    if not TOKEN:
-        raise ValueError("Il token del bot non è stato fornito.")
+    WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # URL del webhook (es. https://il-tuo-dominio.render.com)
+    PORT = int(os.environ.get("PORT", 8443))  # Porta specificata da Render
+
+    if not TOKEN or not WEBHOOK_URL:
+        raise ValueError("Assicurati di aver impostato TELEGRAM_BOT_TOKEN e WEBHOOK_URL nel file .env")
 
     app = ApplicationBuilder().token(TOKEN).build()
     app.bot_data["db_pool"] = db_pool  # Assegna il pool di connessione al database
 
     await set_bot_commands(app)
 
+    # Aggiungi i gestori
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("riepilogo", riepilogo))
     app.add_handler(CommandHandler("gestisci", gestisci))
@@ -362,20 +366,12 @@ async def main():
         per_message=False,
     ))
 
-
-    def start_dummy_server():
-        PORT = int(os.environ.get("PORT", 8080))  # Render richiede che usi la porta specificata
-        handler = http.server.SimpleHTTPRequestHandler
-        with socketserver.TCPServer(("", PORT), handler) as httpd:
-            print(f"Serving dummy HTTP on port {PORT}")
-            httpd.serve_forever()
-
-    threading.Thread(target=start_dummy_server, daemon=True).start()
-
-
-
-    print("🤖 Bot in esecuzione...")
-    await app.run_polling()
+    # Avvia il bot con webhook
+    await app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        webhook_url=f"{WEBHOOK_URL}/{TOKEN}"
+    )
 
 if __name__ == "__main__":
     import nest_asyncio
