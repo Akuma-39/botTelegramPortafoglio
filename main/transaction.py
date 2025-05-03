@@ -381,7 +381,6 @@ async def main():
         listen="0.0.0.0",
         port=PORT,
         webhook_url=f"{WEBHOOK_URL}/{TOKEN}",
-        web_app=aio_app
     )
 
 if __name__ == "__main__":
