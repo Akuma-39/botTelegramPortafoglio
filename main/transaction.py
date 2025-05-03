@@ -61,11 +61,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 *Benvenuto nel Bot di Gestione Finanziaria!* 💰\n\n"
         "Ecco cosa puoi fare:\n"
-        "• `/spesa` - Aggiungi una spesa\n"
-        "• `/entrata` - Aggiungi un'entrata\n"
-        "• `/riepilogo` - Mostra il riepilogo delle tue transazioni\n"
-        "• `/gestisci` - Modifica o elimina una transazione\n"
-        "• `/annulla` - Annulla l'operazione corrente\n\n"
+        "• /spesa - Aggiungi una spesa\n"
+        "• /entrata - Aggiungi un'entrata\n"
+        "• /riepilogo - Mostra il riepilogo delle tue transazioni\n"
+        "• /gestisci - Modifica o elimina una transazione\n"
+        "• /annulla - Annulla l'operazione corrente\n\n"
         "Inizia subito a gestire le tue finanze! 🚀",
         parse_mode="Markdown"
     )
@@ -266,8 +266,8 @@ async def aggiorna_transazione(update: Update, context: ContextTypes.DEFAULT_TYP
     except ValueError:
         await update.message.reply_text(
             "❌ Formato non valido. Scrivi:\n"
-            "• Solo l'importo (es. `50`)\n"
-            "• Oppure descrizione e importo separati da uno spazio (es. `Cena 50`)",
+            "• Solo l'importo (es. 50)\n"
+            "• Oppure descrizione e importo separati da uno spazio (es. Cena 50)",
             parse_mode="Markdown"
         )
         return IMPORTO
@@ -301,7 +301,7 @@ async def riepilogo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ])
     await update.message.reply_text(
         f"📊 *Riepilogo delle tue transazioni:*\n\n{lista}\n\n"
-        f"💼 *Totale*: `{totale:.2f} €`",
+        f"💼 *Totale*: {totale:.2f} €",
         parse_mode="Markdown"
     )
 
@@ -310,7 +310,7 @@ async def riepilogo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def comando_non_riconosciuto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "❌ *Comando non riconosciuto!*\n"
-        "Usa un comando valido come `/spesa`, `/entrata` o `/riepilogo`.",
+        "Usa un comando valido come /spesa, /entrata o /riepilogo.",
         parse_mode="Markdown"
     )
 
@@ -367,4 +367,3 @@ if __name__ == "__main__":
     nest_asyncio.apply()
     import asyncio
     asyncio.run(main())
-
