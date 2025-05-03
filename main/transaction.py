@@ -6,6 +6,9 @@ from dotenv import load_dotenv
 import asyncpg
 import csv
 import io
+import threading
+import http.server
+import socketserver
 
 
 async def connect_db():
@@ -358,6 +361,18 @@ async def main():
         fallbacks=[CommandHandler("annulla", annulla)],
         per_message=False,
     ))
+
+
+    def start_dummy_server():
+        PORT = int(os.environ.get("PORT", 8080))  # Render richiede che usi la porta specificata
+        handler = http.server.SimpleHTTPRequestHandler
+        with socketserver.TCPServer(("", PORT), handler) as httpd:
+            print(f"Serving dummy HTTP on port {PORT}")
+            httpd.serve_forever()
+
+    threading.Thread(target=start_dummy_server, daemon=True).start()
+
+
 
     print("🤖 Bot in esecuzione...")
     await app.run_polling()
