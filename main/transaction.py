@@ -328,6 +328,38 @@ async def messaggio_generico(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def ping(request):
     return web.Response(text="pong")
+
+# Configura il server HTTP con aiohttp
+async def handle_webhook(request):
+    update = await request.json()
+    await app.update_queue.put(update)  # Invia l'aggiornamento alla coda del bot
+    return web.Response(text="OK")  # Rispondi con "OK" per confermare la ricezione
+
+async def ping(request):
+    return web.Response(text="pong")
+
+# Crea il server HTTP
+aio_app = web.Application()
+aio_app.router.add_post(f"/{TOKEN}", handle_webhook)  # Webhook endpoint
+aio_app.router.add_get("/ping", ping)  # Endpoint di test
+
+# Avvia il server HTTP
+async def start_server():
+    runner = web.AppRunner(aio_app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    await site.start()
+
+    print(f"Server avviato su porta {PORT}. Webhook configurato su {WEBHOOK_URL}/{TOKEN}")
+
+# Ensure PORT, WEBHOOK_URL, and TOKEN are defined before calling start_server
+PORT = int(os.environ.get("PORT", 8443))
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://example.com")
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "your-telegram-bot-token")
+
+# Call the async function to start the server
+asyncio.run(start_server())
+
 # Main
 async def main():
     db_pool = await connect_db()
