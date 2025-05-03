@@ -9,7 +9,11 @@ import io
 import threading
 import http.server
 import socketserver
+import asyncio
+import nest_asyncio
 
+# Applica la patch per evitare conflitti con l'event loop
+nest_asyncio.apply()
 
 async def connect_db():
     return await asyncpg.create_pool(os.getenv("DATABASE_URL"))
@@ -374,7 +378,5 @@ async def main():
     )
 
 if __name__ == "__main__":
-    import nest_asyncio
-    nest_asyncio.apply()
-    import asyncio
-    asyncio.run(main())
+    loop = asyncio.get_event_loop()  # Ottieni l'event loop corrente
+    loop.run_until_complete(main())  # Esegui la funzione main
