@@ -329,15 +329,14 @@ async def messaggio_generico(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def main():
     db_pool = await connect_db()
     await crea_tabella(db_pool)
-    env_path = Path(__file__).parent / ".env"
-    load_dotenv(dotenv_path=env_path)
 
+    # Ottieni le variabili d'ambiente direttamente
     TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
     WEBHOOK_URL = os.getenv("WEBHOOK_URL")
     PORT = int(os.environ.get("PORT", 8443))
 
     if not TOKEN or not WEBHOOK_URL:
-        raise ValueError("Assicurati di aver impostato TELEGRAM_BOT_TOKEN e WEBHOOK_URL nel file .env")
+        raise ValueError("Assicurati di aver impostato TELEGRAM_BOT_TOKEN e WEBHOOK_URL nelle variabili d'ambiente")
 
     app = ApplicationBuilder().token(TOKEN).build()
     app.bot_data["db_pool"] = db_pool
