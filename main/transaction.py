@@ -316,6 +316,15 @@ async def comando_non_riconosciuto(update: Update, context: ContextTypes.DEFAULT
         "Usa un comando valido come /spesa, /entrata o /riepilogo.",
         parse_mode="Markdown"
     )
+# Funzione per avviare un server HTTP dummy per Render
+def start_dummy_server():
+    PORT = int(os.environ.get("PORT", 8080))  # Render richiede che usi la porta specificata
+    handler = http.server.SimpleHTTPRequestHandler
+    with socketserver.TCPServer(("", PORT), handler) as httpd:
+        print(f"Serving dummy HTTP on port {PORT}")
+        httpd.serve_forever()
+
+
 
 async def messaggio_generico(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⚠️ --- Non ho capito. Usa un comando come /spesa, /entrata o /riepilogo --- ⚠️")
@@ -323,7 +332,8 @@ async def messaggio_generico(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def main():
     env_path = Path(__file__).parent / ".env"
     load_dotenv(dotenv_path=env_path)
-
+      # Avvia il server HTTP dummy in un thread separato
+    threading.Thread(target=start_dummy_server, daemon=True).start()
     TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
     WEBHOOK_URL = os.getenv("WEBHOOK_URL")
     PORT = int(os.environ.get("PORT", 8443))
@@ -361,7 +371,7 @@ async def main():
         fallbacks=[CommandHandler("annulla", annulla)],
         per_message=False,
     ))
-
+    
     # Avvia il bot con webhook
     await app.run_webhook(
         listen="0.0.0.0",
