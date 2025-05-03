@@ -373,6 +373,16 @@ async def main():
         webhook_url=f"{WEBHOOK_URL}/{TOKEN}"
     )
 
+    # Configura il server HTTP con aiohttp
+    async def handle_webhook(request):
+        update = await request.json()
+        await app.update_queue.put(update)  # Invia l'aggiornamento alla coda del bot
+        return web.Response(text="OK")  # Rispondi con "OK" per confermare la ricezione
+
+    # Crea il server HTTP
+    aio_app = web.Application()
+    aio_app.router.add_post(f"/{TOKEN}", handle_webhook)  # Webhook endpoint
+
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()  # Ottieni l'event loop corrente
     loop.run_until_complete(main())  # Esegui la funzione main
