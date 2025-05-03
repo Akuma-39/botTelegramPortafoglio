@@ -383,4 +383,9 @@ async def main():
         webhook_url=f"{RENDER_EXTERNAL_URL}/webhook",
     )
 
+    if __name__ == "__main__":
+        import asyncio
+        asyncio.run(main())
+
+
 
