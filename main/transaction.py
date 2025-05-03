@@ -9,12 +9,7 @@ import io
 import threading
 import http.server
 import socketserver
-import asyncio
-import nest_asyncio
-from aiohttp import web  # in cima se non presente
 
-# Applica la patch per evitare conflitti con l'event loop
-nest_asyncio.apply()
 
 async def connect_db():
     return await asyncpg.create_pool(os.getenv("DATABASE_URL"))
@@ -321,63 +316,64 @@ async def comando_non_riconosciuto(update: Update, context: ContextTypes.DEFAULT
         "Usa un comando valido come /spesa, /entrata o /riepilogo.",
         parse_mode="Markdown"
     )
+def start_dummy_server():
+    PORT = int(os.environ.get("PORT", 8080))
+    handler = http.server.SimpleHTTPRequestHandler
+    with socketserver.TCPServer(("", PORT), handler) as httpd:
+        print(f"Serving dummy HTTP on port {PORT}")
+        httpd.serve_forever()
+
+threading.Thread(target=start_dummy_server, daemon=True).start()
+
 
 async def messaggio_generico(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⚠️ --- Non ho capito. Usa un comando come /spesa, /entrata o /riepilogo --- ⚠️")
-
-# Main
+#Main 
 async def main():
-    db_pool = await connect_db()
-    await crea_tabella(db_pool)  # Creazione della tabella se non esiste
     env_path = Path(__file__).parent / ".env"
     load_dotenv(dotenv_path=env_path)
 
     TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-    WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # URL del webhook (es. https://il-tuo-dominio.render.com)
-    PORT = int(os.environ.get("PORT", 8443))  # Porta specificata da Render
+    WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+    PORT = int(os.environ.get("PORT", 8443))
 
     if not TOKEN or not WEBHOOK_URL:
         raise ValueError("Assicurati di aver impostato TELEGRAM_BOT_TOKEN e WEBHOOK_URL nel file .env")
 
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.bot_data["db_pool"] = db_pool  # Assegna il pool di connessione al database
+    db_pool = await connect_db()
+    await crea_tabella(db_pool)
 
+    app = ApplicationBuilder().token(TOKEN).build()
+    app.bot_data["db_pool"] = db_pool
     await set_bot_commands(app)
 
-    # Aggiungi i gestori
+    # Handlers come prima
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("riepilogo", riepilogo))
     app.add_handler(CommandHandler("gestisci", gestisci))
     app.add_handler(CommandHandler("esporta", esporta))
-
     app.add_handler(ConversationHandler(
         entry_points=[CommandHandler("spesa", spesa_start)],
         states={DESCRIZIONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, descrizione)],
                 IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, importo)]},
         fallbacks=[CommandHandler("annulla", annulla)],
     ))
-
     app.add_handler(ConversationHandler(
         entry_points=[CommandHandler("entrata", entrata_start)],
         states={DESCRIZIONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, descrizione)],
                 IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, importo)]},
         fallbacks=[CommandHandler("annulla", annulla)],
     ))
-
     app.add_handler(ConversationHandler(
         entry_points=[CallbackQueryHandler(gestisci_callback)],
         states={IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, aggiorna_transazione)]},
         fallbacks=[CommandHandler("annulla", annulla)],
         per_message=False,
     ))
-
+    
     # Avvia il bot con webhook
     await app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
         webhook_url=f"{WEBHOOK_URL}/{TOKEN}"
     )
-
-if __name__ == "__main__":
-    loop = asyncio.get_event_loop()  # Ottieni l'event loop corrente
-    loop.run_until_complete(main())  # Esegui la funzione main
