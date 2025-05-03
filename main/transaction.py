@@ -328,11 +328,9 @@ async def main():
     await crea_tabella(db_pool)
 
     TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-    WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # URL del webhook (es. https://il-tuo-dominio.render.com)
-    PORT = int(os.environ.get("PORT", 8443))  # Porta specificata da Render
 
-    if not TOKEN or not WEBHOOK_URL:
-        raise ValueError("Assicurati di aver impostato TELEGRAM_BOT_TOKEN e WEBHOOK_URL nelle variabili d'ambiente")
+    if not TOKEN:
+        raise ValueError("Assicurati di aver impostato TELEGRAM_BOT_TOKEN nelle variabili d'ambiente")
 
     app = ApplicationBuilder().token(TOKEN).build()
     app.bot_data["db_pool"] = db_pool
@@ -365,24 +363,25 @@ async def main():
         fallbacks=[CommandHandler("annulla", annulla)],
         per_message=False,
     ))
- 
-    # Avvia il bot con webhook
-    await app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        webhook_url=f"{WEBHOOK_URL}/{TOKEN}"
-    )
 
-    # Configura il server HTTP con aiohttp
-    async def handle_webhook(request):
-        update = await request.json()
-        await app.update_queue.put(update)  # Invia l'aggiornamento alla coda del bot
-        return web.Response(text="OK")  # Rispondi con "OK" per confermare la ricezione
+    # Avvia il bot con polling
+    print("🚀 Avvio del bot in modalità polling...")
+    await app.run_polling()
 
-    # Crea il server HTTP
-    aio_app = web.Application()
-    aio_app.router.add_post(f"/{TOKEN}", handle_webhook)  # Webhook endpoint
+# Server HTTP dummy per Render
+async def handle_ping(request):
+    return web.Response(text="pong")
+
+async def start_dummy_server():
+    PORT = int(os.environ.get("PORT", 8080))  # Porta fornita da Render
+    app = web.Application()
+    app.router.add_get("/ping", handle_ping)  # Endpoint di test
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    await site.start()
+    print(f"🌐 Server HTTP dummy avviato su porta {PORT}")
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()  # Ottieni l'event loop corrente
-    loop.run_until_complete(main())  # Esegui la funzione main
+    asyncio.run(start_dummy_server())  # Avvia il server HTTP dummy in parallelo
+    asyncio.run(main())  # Avvia il bot in modalità polling
