@@ -328,18 +328,19 @@ async def messaggio_generico(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # Main
 async def main():
     db_pool = await connect_db()
-    await crea_tabella(db_pool)
+    await crea_tabella(db_pool)  # Creazione della tabella se non esiste
+    env_path = Path(__file__).parent / ".env"
+    load_dotenv(dotenv_path=env_path)
 
-    # Ottieni le variabili d'ambiente direttamente
     TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-    WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-    PORT = int(os.environ.get("PORT", 8443))
+    WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # URL del webhook (es. https://il-tuo-dominio.render.com)
+    PORT = int(os.environ.get("PORT", 8443))  # Porta specificata da Render
 
     if not TOKEN or not WEBHOOK_URL:
-        raise ValueError("Assicurati di aver impostato TELEGRAM_BOT_TOKEN e WEBHOOK_URL nelle variabili d'ambiente")
+        raise ValueError("Assicurati di aver impostato TELEGRAM_BOT_TOKEN e WEBHOOK_URL nel file .env")
 
     app = ApplicationBuilder().token(TOKEN).build()
-    app.bot_data["db_pool"] = db_pool
+    app.bot_data["db_pool"] = db_pool  # Assegna il pool di connessione al database
 
     await set_bot_commands(app)
 
@@ -369,39 +370,14 @@ async def main():
         fallbacks=[CommandHandler("annulla", annulla)],
         per_message=False,
     ))
-
-    # Configura il server HTTP con aiohttp
-    async def handle_webhook(request):
-        update = await request.json()
-        await app.update_queue.put(update)
-        return web.Response()
-
-    async def ping(request):
-        return web.Response(text="🏓 Pong!")
-
-    # Crea il server HTTP
-    server = web.Application()
-    server.router.add_post(f"/{TOKEN}", handle_webhook)  # Webhook endpoint
-    server.router.add_get("/ping", ping)  # Endpoint di test
-
-    # Avvia il server HTTP
-    runner = web.AppRunner(server)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", PORT)
-    await site.start()
-
-    print(f"Server avviato su porta {PORT}. Webhook configurato su {WEBHOOK_URL}/{TOKEN}")
-
-    # Avvia il bot
-    await app.start()
-    await app.updater.start_webhook(listen="0.0.0.0", port=PORT, webhook_url=f"{WEBHOOK_URL}/{TOKEN}")
-
-    # Mantieni il bot in esecuzione
-    await app.updater.idle()
+ 
+    # Avvia il bot con webhook
+    await app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        webhook_url=f"{WEBHOOK_URL}/{TOKEN}"
+    )
 
 if __name__ == "__main__":
-    import nest_asyncio
-    import asyncio
-
-    nest_asyncio.apply()
-    asyncio.run(main())
+    loop = asyncio.get_event_loop()  # Ottieni l'event loop corrente
+    loop.run_until_complete(main())  # Esegui la funzione main
