@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 import asyncpg
 import csv
 import io
+from aiohttp import web
 
 
 async def connect_db():
@@ -320,19 +321,22 @@ async def messaggio_generico(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # Main
 async def main():
     db_pool = await connect_db()
-    await crea_tabella(db_pool)  # Creazione della tabella se non esiste
-    env_path = Path(__file__).parent / ".env"
-    load_dotenv(dotenv_path=env_path)
+    await crea_tabella(db_pool)
 
+    # Ottieni le variabili d'ambiente
     TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-    if not TOKEN:
-        raise ValueError("Il token del bot non è stato fornito.")
+    WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # URL pubblico del webhook (es. https://il-tuo-dominio.onrender.com)
+    PORT = int(os.environ.get("PORT", 8443))  # Porta specificata da Render
+
+    if not TOKEN or not WEBHOOK_URL:
+        raise ValueError("Assicurati di aver impostato TELEGRAM_BOT_TOKEN e WEBHOOK_URL nelle variabili d'ambiente")
 
     app = ApplicationBuilder().token(TOKEN).build()
-    app.bot_data["db_pool"] = db_pool  # Assegna il pool di connessione al database
+    app.bot_data["db_pool"] = db_pool
 
     await set_bot_commands(app)
 
+    # Aggiungi i gestori
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("riepilogo", riepilogo))
     app.add_handler(CommandHandler("gestisci", gestisci))
@@ -359,12 +363,40 @@ async def main():
         per_message=False,
     ))
 
-    print("🤖 Bot in esecuzione...")
-    await app.run_polling()
+    # Configura il server HTTP con aiohttp
+    async def handle_webhook(request):
+        update = await request.json()
+        await app.update_queue.put(update)  # Invia l'aggiornamento alla coda del bot
+        return web.Response(text="OK")  # Rispondi con "OK" per confermare la ricezione
+
+    async def ping(request):
+        return web.Response(text="pong")
+
+    # Crea il server HTTP
+    aio_app = web.Application()
+    aio_app.router.add_post(f"/{TOKEN}", handle_webhook)  # Webhook endpoint
+    aio_app.router.add_get("/ping", ping)  # Endpoint di test
+
+    # Avvia il server HTTP
+    runner = web.AppRunner(aio_app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    await site.start()
+
+    print(f"Server avviato su porta {PORT}. Webhook configurato su {WEBHOOK_URL}/{TOKEN}")
+
+    # Inizializza il bot
+    await app.initialize()
+    await app.updater.start_webhook(listen="0.0.0.0", port=PORT, webhook_url=f"{WEBHOOK_URL}/{TOKEN}")
+    await app.start()
+
+    # Mantieni il bot in esecuzione
+    await app.updater.idle()
 
 if __name__ == "__main__":
     import nest_asyncio
-    nest_asyncio.apply()
     import asyncio
+
+    nest_asyncio.apply()
     asyncio.run(main())
 
