@@ -12,7 +12,8 @@ import socketserver
 import asyncio
 import nest_asyncio
 from aiohttp import web  # in cima se non presente
-
+import telegram
+print(f"python-telegram-bot version: {telegram.__version__}")
 # Applica la patch per evitare conflitti con l'event loop
 nest_asyncio.apply()
 
