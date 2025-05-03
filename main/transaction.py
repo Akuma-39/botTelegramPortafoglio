@@ -323,55 +323,60 @@ async def messaggio_generico(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await update.message.reply_text("⚠️ --- Non ho capito. Usa un comando come /spesa, /entrata o /riepilogo --- ⚠️")
 
 # Main
+import os
+from telegram.ext import ApplicationBuilder
+
+from .db import connect_db, crea_tabella
+from .handlers import (
+    start, help_command, fallback, messaggio_generico,
+    conversation_handler, echo_handler, cancel_handler,
+    error_handler, set_bot_commands
+)
+
 async def main():
+    # 1. Connessione al database
+    print("📦 Connessione al database...")
     db_pool = await connect_db()
     await crea_tabella(db_pool)
+    print("✅ Connessione DB completata.")
 
+    # 2. Caricamento token e URL webhook
     TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-    WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # URL del webhook (es. https://il-tuo-dominio.render.com)
-    PORT = int(os.environ.get("PORT", 8443))  # Porta specificata da Render
+    WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+    PORT = int(os.environ.get("PORT", 8443))
 
     if not TOKEN or not WEBHOOK_URL:
-        raise ValueError("Assicurati di aver impostato TELEGRAM_BOT_TOKEN e WEBHOOK_URL nelle variabili d'ambiente")
+        raise ValueError("❌ TELEGRAM_BOT_TOKEN o WEBHOOK_URL non sono impostati.")
 
+    print(f"🔐 Token caricato. Webhook URL: {WEBHOOK_URL}, Porta: {PORT}")
+
+    # 3. Creazione dell'app
     app = ApplicationBuilder().token(TOKEN).build()
     app.bot_data["db_pool"] = db_pool
 
+    # 4. Imposta i comandi del bot
     await set_bot_commands(app)
+    print("📋 Comandi del bot impostati.")
 
-    # Aggiungi i gestori
+    # 5. Aggiungi i tuoi handler
+    from telegram.ext import CommandHandler, MessageHandler, filters
+
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("riepilogo", riepilogo))
-    app.add_handler(CommandHandler("gestisci", gestisci))
-    app.add_handler(CommandHandler("esporta", esporta))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("cancel", cancel_handler))
+    app.add_handler(conversation_handler)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, messaggio_generico))
+    app.add_error_handler(error_handler)
 
-    app.add_handler(ConversationHandler(
-        entry_points=[CommandHandler("spesa", spesa_start)],
-        states={DESCRIZIONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, descrizione)],
-                IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, importo)]},
-        fallbacks=[CommandHandler("annulla", annulla)],
-    ))
-
-    app.add_handler(ConversationHandler(
-        entry_points=[CommandHandler("entrata", entrata_start)],
-        states={DESCRIZIONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, descrizione)],
-                IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, importo)]},
-        fallbacks=[CommandHandler("annulla", annulla)],
-    ))
-
-    app.add_handler(ConversationHandler(
-        entry_points=[CallbackQueryHandler(gestisci_callback)],
-        states={IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, aggiorna_transazione)]},
-        fallbacks=[CommandHandler("annulla", annulla)],
-        per_message=False,
-    ))
- 
-    # Avvia il bot con webhook
+    # 6. Avvio webhook
+    print("🌐 Avvio del webhook...")
     await app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
         webhook_url=f"{WEBHOOK_URL}/{TOKEN}"
     )
+    print("🚀 Webhook avviato con successo! (non dovresti vedere questo log)")  # Non verrà mai mostrato
+
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()  # Ottieni l'event loop corrente
