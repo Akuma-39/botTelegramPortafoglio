@@ -1,4 +1,5 @@
-python-telegram-bot==20.7
-python-dotenv
-nest_asyncio
+python-telegram-bot==20.8
 asyncpg
+python-dotenv
+fastapi
+uvicorn

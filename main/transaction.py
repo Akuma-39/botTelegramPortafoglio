@@ -317,22 +317,37 @@ async def comando_non_riconosciuto(update: Update, context: ContextTypes.DEFAULT
 async def messaggio_generico(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⚠️ --- Non ho capito. Usa un comando come /spesa, /entrata o /riepilogo --- ⚠️")
 
+from fastapi import FastAPI
+from starlette.requests import Request
+from telegram.ext import Application
+
+fastapi_app = FastAPI()
+
+@fastapi_app.get("/")
+async def root():
+    return {"status": "ok", "message": "🤖 Bot attivo!"}
+
 # Main
 async def main():
-    db_pool = await connect_db()
-    await crea_tabella(db_pool)  # Creazione della tabella se non esiste
     env_path = Path(__file__).parent / ".env"
     load_dotenv(dotenv_path=env_path)
 
     TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-    if not TOKEN:
-        raise ValueError("Il token del bot non è stato fornito.")
+    RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")  # es. https://nome-servizio.onrender.com
+    PORT = int(os.getenv("PORT", 8000))  # Render assegna la porta dinamicamente
+
+    if not TOKEN or not RENDER_EXTERNAL_URL:
+        raise ValueError("TOKEN o RENDER_EXTERNAL_URL mancante.")
+
+    db_pool = await connect_db()
+    await crea_tabella(db_pool)
 
     app = ApplicationBuilder().token(TOKEN).build()
-    app.bot_data["db_pool"] = db_pool  # Assegna il pool di connessione al database
+    app.bot_data["db_pool"] = db_pool
 
     await set_bot_commands(app)
 
+    # I tuoi handler (non modificare)
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("riepilogo", riepilogo))
     app.add_handler(CommandHandler("gestisci", gestisci))
@@ -359,12 +374,13 @@ async def main():
         per_message=False,
     ))
 
-    print("🤖 Bot in esecuzione...")
-    await app.run_polling()
+    # ✅ Esegui con webhook
+    print("🤖 Bot in esecuzione con webhook...")
+    app.web_app = fastapi_app
+    await app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        webhook_url=f"{RENDER_EXTERNAL_URL}/webhook",
+    )
 
-if __name__ == "__main__":
-    import nest_asyncio
-    nest_asyncio.apply()
-    import asyncio
-    asyncio.run(main())
 
