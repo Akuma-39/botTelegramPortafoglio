@@ -211,21 +211,6 @@ async def gestisci_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
 
-    elif data == "modifica":
-        await query.edit_message_text(
-            "✏️ *Scrivi la nuova descrizione e il nuovo importo (o solo il nuovo importo) separati da uno spazio*",
-            parse_mode="Markdown"
-        )
-        return IMPORTO
-
-    elif data == "elimina":
-        transazione_id = context.user_data.get('transazione_id')
-        if transazione_id:
-            pool = context.application.bot_data["db_pool"]
-            await pool.execute("DELETE FROM transazioni WHERE id = $1", transazione_id)
-            await query.edit_message_text("🗑️ *Transazione eliminata con successo!*", parse_mode="Markdown")
-        return ConversationHandler.END
-
 
 # Aggiorna transazione
 async def aggiorna_transazione(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -332,8 +317,11 @@ async def messaggio_generico(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def main():
     env_path = Path(__file__).parent / ".env"
     load_dotenv(dotenv_path=env_path)
-      # Avvia il server HTTP dummy in un thread separato
+    
+    # Avvia il server HTTP dummy in un thread separato
     threading.Thread(target=start_dummy_server, daemon=True).start()
+
+    # Estrai token e URL dal file .env
     TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
     WEBHOOK_URL = os.getenv("WEBHOOK_URL")
     PORT = int(os.environ.get("PORT", 8443))
@@ -353,28 +341,32 @@ async def main():
     app.add_handler(CommandHandler("riepilogo", riepilogo))
     app.add_handler(CommandHandler("gestisci", gestisci))
     app.add_handler(CommandHandler("esporta", esporta))
+    
     app.add_handler(ConversationHandler(
         entry_points=[CommandHandler("spesa", spesa_start)],
         states={DESCRIZIONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, descrizione)],
                 IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, importo)]},
         fallbacks=[CommandHandler("annulla", annulla)],
     ))
+
     app.add_handler(ConversationHandler(
         entry_points=[CommandHandler("entrata", entrata_start)],
         states={DESCRIZIONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, descrizione)],
                 IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, importo)]},
         fallbacks=[CommandHandler("annulla", annulla)],
     ))
+
     app.add_handler(ConversationHandler(
         entry_points=[CallbackQueryHandler(gestisci_callback)],
         states={IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, aggiorna_transazione)]},
         fallbacks=[CommandHandler("annulla", annulla)],
         per_message=False,
     ))
-    
+
     # Avvia il bot con webhook
     await app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
         webhook_url=f"{WEBHOOK_URL}/{TOKEN}"
     )
+
