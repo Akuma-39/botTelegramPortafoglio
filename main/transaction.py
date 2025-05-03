@@ -325,6 +325,8 @@ async def comando_non_riconosciuto(update: Update, context: ContextTypes.DEFAULT
 async def messaggio_generico(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⚠️ --- Non ho capito. Usa un comando come /spesa, /entrata o /riepilogo --- ⚠️")
 
+async def ping(request):
+    return web.Response(text="pong")
 # Main
 async def main():
     db_pool = await connect_db()
@@ -370,12 +372,15 @@ async def main():
         fallbacks=[CommandHandler("annulla", annulla)],
         per_message=False,
     ))
- 
+    aio_app = web.Application()
+    aio_app.add_routes([web.get("/ping", ping)])
+
     # Avvia il bot con webhook
     await app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
-        webhook_url=f"{WEBHOOK_URL}/{TOKEN}"
+        webhook_url=f"{WEBHOOK_URL}/{TOKEN}",
+        web_app=aio_app
     )
 
 if __name__ == "__main__":
