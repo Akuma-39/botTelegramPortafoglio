@@ -11,6 +11,7 @@ import http.server
 import socketserver
 import asyncio
 import nest_asyncio
+from aiohttp import web  # in cima se non presente
 
 # Applica la patch per evitare conflitti con l'event loop
 nest_asyncio.apply()
@@ -327,23 +328,29 @@ async def messaggio_generico(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # Main
 async def main():
     db_pool = await connect_db()
-    await crea_tabella(db_pool)  # Creazione della tabella se non esiste
+    await crea_tabella(db_pool)
     env_path = Path(__file__).parent / ".env"
     load_dotenv(dotenv_path=env_path)
 
     TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-    WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # URL del webhook (es. https://il-tuo-dominio.render.com)
-    PORT = int(os.environ.get("PORT", 8443))  # Porta specificata da Render
+    WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+    PORT = int(os.environ.get("PORT", 8443))
 
     if not TOKEN or not WEBHOOK_URL:
         raise ValueError("Assicurati di aver impostato TELEGRAM_BOT_TOKEN e WEBHOOK_URL nel file .env")
 
     app = ApplicationBuilder().token(TOKEN).build()
-    app.bot_data["db_pool"] = db_pool  # Assegna il pool di connessione al database
+    app.bot_data["db_pool"] = db_pool
 
     await set_bot_commands(app)
 
-    # Aggiungi i gestori
+    # AGGIUNTA PING
+    async def ping(request):
+        return web.Response(text="🏓 Pong!")
+
+    app.web_app.add_routes([web.get("/ping", ping)])  # ⬅️ Inserito prima del run_webhook
+
+    # Handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("riepilogo", riepilogo))
     app.add_handler(CommandHandler("gestisci", gestisci))
@@ -370,7 +377,7 @@ async def main():
         per_message=False,
     ))
 
-    # Avvia il bot con webhook
+    # Avvio webhook
     await app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
