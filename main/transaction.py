@@ -344,13 +344,7 @@ async def main():
 
     await set_bot_commands(app)
 
-    # AGGIUNTA PING
-    async def ping(request):
-        return web.Response(text="🏓 Pong!")
-
-    app.web_app.add_routes([web.get("/ping", ping)])  # ⬅️ Inserito prima del run_webhook
-
-    # Handlers
+    # Aggiungi i gestori
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("riepilogo", riepilogo))
     app.add_handler(CommandHandler("gestisci", gestisci))
@@ -377,13 +371,38 @@ async def main():
         per_message=False,
     ))
 
-    # Avvio webhook
-    await app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        webhook_url=f"{WEBHOOK_URL}/{TOKEN}"
-    )
+    # Configura il server HTTP con aiohttp
+    async def handle_webhook(request):
+        update = await request.json()
+        await app.update_queue.put(update)
+        return web.Response()
+
+    async def ping(request):
+        return web.Response(text="🏓 Pong!")
+
+    # Crea il server HTTP
+    server = web.Application()
+    server.router.add_post(f"/{TOKEN}", handle_webhook)  # Webhook endpoint
+    server.router.add_get("/ping", ping)  # Endpoint di test
+
+    # Avvia il server HTTP
+    runner = web.AppRunner(server)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    await site.start()
+
+    print(f"Server avviato su porta {PORT}. Webhook configurato su {WEBHOOK_URL}/{TOKEN}")
+
+    # Avvia il bot
+    await app.start()
+    await app.updater.start_webhook(listen="0.0.0.0", port=PORT, webhook_url=f"{WEBHOOK_URL}/{TOKEN}")
+
+    # Mantieni il bot in esecuzione
+    await app.updater.idle()
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()  # Ottieni l'event loop corrente
-    loop.run_until_complete(main())  # Esegui la funzione main
+    import nest_asyncio
+    import asyncio
+
+    nest_asyncio.apply()
+    asyncio.run(main())
