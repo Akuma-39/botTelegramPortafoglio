@@ -8,7 +8,10 @@ import csv
 import io
 from aiohttp import web
 import asyncio  # Importa asyncio per gestire l'event loop
+import nest_asyncio
 
+# Applica nest_asyncio per evitare conflitti con l'event loop
+nest_asyncio.apply()
 
 async def connect_db():
     return await asyncpg.create_pool(os.getenv("DATABASE_URL"))
