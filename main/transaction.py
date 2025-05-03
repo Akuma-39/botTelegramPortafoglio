@@ -7,6 +7,7 @@ import asyncpg
 import csv
 import io
 from aiohttp import web
+import asyncio  # Importa asyncio per gestire l'event loop
 
 
 async def connect_db():
