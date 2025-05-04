@@ -46,6 +46,8 @@ DESCRIZIONE, IMPORTO, CATEGORIA = range(3)
 
 # Lista globale per memorizzare le spese
 spese = []
+# Stato per aggiungere una categoria
+NOME_CATEGORIA = range(1)
 
 # Funzione per esportare le spese in CSV
 async def esporta(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -230,6 +232,56 @@ async def gestisci_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except (IndexError, ValueError):
             await query.edit_message_text("⚠️ Errore: Formato del callback non valido.")
             return
+
+    # Gestione delle categorie
+    elif data.startswith("gestisci_categoria_"):
+        try:
+            categoria_id = int(data.split("_")[2])  # Ottieni l'ID della categoria
+            context.user_data['categoria_id'] = categoria_id
+
+            # Recupera il nome della categoria dal database
+            pool = context.application.bot_data["db_pool"]
+            categoria = await pool.fetchrow(
+                "SELECT nome FROM categorie WHERE id = $1",
+                categoria_id
+            )
+
+            if not categoria:
+                await query.edit_message_text("⚠️ Categoria non trovata.")
+                return ConversationHandler.END
+
+            context.user_data['categoria_nome'] = categoria['nome']
+
+            # Mostra le opzioni di gestione
+            keyboard = [
+                [InlineKeyboardButton("✏️ Modifica", callback_data="modifica_categoria"),
+                 InlineKeyboardButton("🗑️ Elimina", callback_data="elimina_categoria")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await query.edit_message_text(
+                f"🔍 *Hai selezionato la categoria:* {categoria['nome']}\n\n"
+                "Cosa vuoi fare?",
+                reply_markup=reply_markup,
+                parse_mode="Markdown"
+            )
+        except (IndexError, ValueError):
+            await query.edit_message_text("⚠️ Errore: Formato del callback non valido.")
+            return ConversationHandler.END
+
+    # Gestione della modifica della categoria
+    elif data == "modifica_categoria":
+        await query.edit_message_text("✏️ Scrivi il nuovo nome della categoria:")
+        return NOME_CATEGORIA
+
+    # Gestione dell'eliminazione della categoria
+    elif data == "elimina_categoria":
+        categoria_id = context.user_data.get('categoria_id')
+        if categoria_id:
+            pool = context.application.bot_data["db_pool"]
+            await pool.execute("DELETE FROM categorie WHERE id = $1", categoria_id)
+            await query.edit_message_text("🗑️ Categoria eliminata con successo!")
+        return ConversationHandler.END
 
 
     elif data == "modifica":
@@ -538,8 +590,7 @@ async def gestisci_categoria_start(update: Update, context: ContextTypes.DEFAULT
         reply_markup=reply_markup
     )
     return CATEGORIA
-# Stato per aggiungere una categoria
-NOME_CATEGORIA = range(1)
+
 
 async def gestisci_categoria_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -694,6 +745,13 @@ async def main():
     ))
 
     app.add_handler(ConversationHandler(
+        entry_points=[CallbackQueryHandler(gestisci_callback)],
+        states={IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, aggiorna_transazione)]},
+        fallbacks=[CommandHandler("annulla", annulla)],
+        per_message=False,
+    ))
+
+    app.add_handler(ConversationHandler(
         entry_points=[CommandHandler("aggiungi_categoria", aggiungi_categoria_start)],
         states={
             NOME_CATEGORIA: [MessageHandler(filters.TEXT & ~filters.COMMAND, aggiungi_categoria_nome)],
@@ -702,17 +760,10 @@ async def main():
     ))
 
     app.add_handler(ConversationHandler(
-    entry_points=[CallbackQueryHandler(gestisci_categoria_callback, pattern="gestisci_categoria_")],
-    states={
-        NOME_CATEGORIA: [MessageHandler(filters.TEXT & ~filters.COMMAND, modifica_categoria_nome)],
-    },
-    fallbacks=[CommandHandler("annulla", annulla)],
-    per_message=False,
-    ))
-
-    app.add_handler(ConversationHandler(
-        entry_points=[CallbackQueryHandler(gestisci_callback, pattern="gestisci_")],
-        states={IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, aggiorna_transazione)]},
+        entry_points=[CallbackQueryHandler(gestisci_categoria_callback)],
+        states={
+            NOME_CATEGORIA: [MessageHandler(filters.TEXT & ~filters.COMMAND, modifica_categoria_nome)],
+        },
         fallbacks=[CommandHandler("annulla", annulla)],
         per_message=False,
     ))
