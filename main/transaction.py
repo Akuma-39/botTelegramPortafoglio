@@ -518,7 +518,7 @@ async def elimina_categoria(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text(f"✅ Categoria '{nome_categoria}' eliminata con successo!")
 
-async def elimina_categoria_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def gestisci_categoria_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     pool = context.application.bot_data["db_pool"]
 
@@ -534,34 +534,64 @@ async def elimina_categoria_start(update: Update, context: ContextTypes.DEFAULT_
 
     # Crea una tastiera inline con le categorie
     keyboard = [
-        [InlineKeyboardButton(c['nome'], callback_data=f"elimina_categoria_{c['id']}")]
+        [InlineKeyboardButton(c['nome'], callback_data=f"gestisci_categoria_{c['id']}")]
         for c in categorie
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
-        "🗑️ Seleziona la categoria che vuoi eliminare:",
+        "🛠️ Seleziona una categoria da gestire:",
         reply_markup=reply_markup
     )
     return CATEGORIA
 
-async def elimina_categoria_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def gestisci_categoria_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
     # Ottieni l'ID della categoria selezionata
-    if query.data.startswith("elimina_categoria_"):
+    if query.data.startswith("gestisci_categoria_"):
         categoria_id = int(query.data.split("_")[2])
-        pool = context.application.bot_data["db_pool"]
+        context.user_data['categoria_id'] = categoria_id
 
-        # Elimina la categoria dal database
-        await pool.execute(
-            "DELETE FROM categorie WHERE id = $1",
+        # Recupera il nome della categoria dal database
+        pool = context.application.bot_data["db_pool"]
+        categoria = await pool.fetchrow(
+            "SELECT nome FROM categorie WHERE id = $1",
             categoria_id
         )
-        await query.edit_message_text("✅ Categoria eliminata con successo!")
 
-    return ConversationHandler.END
+        if not categoria:
+            await query.edit_message_text("⚠️ Categoria non trovata.")
+            return ConversationHandler.END
+
+        context.user_data['categoria_nome'] = categoria['nome']
+
+        # Mostra le opzioni di gestione
+        keyboard = [
+            [InlineKeyboardButton("✏️ Modifica", callback_data="modifica_categoria"),
+             InlineKeyboardButton("🗑️ Elimina", callback_data="elimina_categoria")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(
+            f"🔍 *Hai selezionato la categoria:* {categoria['nome']}\n\n"
+            "Cosa vuoi fare?",
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
+        )
+
+    elif query.data == "modifica_categoria":
+        await query.edit_message_text("✏️ Scrivi il nuovo nome della categoria:")
+        return NOME_CATEGORIA
+
+    elif query.data == "elimina_categoria":
+        categoria_id = context.user_data.get('categoria_id')
+        if categoria_id:
+            pool = context.application.bot_data["db_pool"]
+            await pool.execute("DELETE FROM categorie WHERE id = $1", categoria_id)
+            await query.edit_message_text("🗑️ Categoria eliminata con successo!")
+        return ConversationHandler.END
 
 # Stato per aggiungere una categoria
 NOME_CATEGORIA = range(1)
@@ -588,6 +618,29 @@ async def aggiungi_categoria_nome(update: Update, context: ContextTypes.DEFAULT_
 
     return ConversationHandler.END
 
+async def modifica_categoria_nome(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    categoria_id = context.user_data.get('categoria_id')
+    nuovo_nome = update.message.text.strip()
+
+    if not categoria_id:
+        await update.message.reply_text("⚠️ Errore: Nessuna categoria selezionata per la modifica.")
+        return ConversationHandler.END
+
+    pool = context.application.bot_data["db_pool"]
+
+    try:
+        # Aggiorna il nome della categoria nel database
+        await pool.execute(
+            "UPDATE categorie SET nome = $1 WHERE id = $2 AND user_id = $3",
+            nuovo_nome, categoria_id, user_id
+        )
+        await update.message.reply_text(f"✅ Categoria aggiornata con successo: {nuovo_nome}")
+    except asyncpg.UniqueViolationError:
+        await update.message.reply_text(f"⚠️ La categoria '{nuovo_nome}' esiste già.")
+
+    return ConversationHandler.END
+
 # Main
 async def main():
     db_pool = await connect_db()
@@ -610,9 +663,6 @@ async def main():
     app.add_handler(CommandHandler("esporta", esporta))
     app.add_handler(CommandHandler("grafico", grafico)) 
     app.add_handler(CallbackQueryHandler(grafico_callback, pattern="grafico_"))
-    app.add_handler(CommandHandler("aggiungi_categoria", aggiungi_categoria))
-    app.add_handler(CommandHandler("lista_categorie", lista_categorie))
-    app.add_handler(CommandHandler("elimina_categoria", elimina_categoria))
 
     app.add_handler(ConversationHandler(
     entry_points=[CommandHandler("spesa", spesa_start)],
@@ -650,12 +700,15 @@ async def main():
     ))
 
     app.add_handler(ConversationHandler(
-        entry_points=[CommandHandler("elimina_categoria", elimina_categoria_start)],
-        states={
-            CATEGORIA: [CallbackQueryHandler(elimina_categoria_callback, pattern="elimina_categoria_")],
-        },
-        fallbacks=[CommandHandler("annulla", annulla)],
-    ))
+    entry_points=[CommandHandler("gestisci_categoria", gestisci_categoria_start)],
+    states={
+        CATEGORIA: [CallbackQueryHandler(gestisci_categoria_callback, pattern="gestisci_categoria_"),
+                    CallbackQueryHandler(gestisci_categoria_callback, pattern="modifica_categoria"),
+                    CallbackQueryHandler(gestisci_categoria_callback, pattern="elimina_categoria")],
+        NOME_CATEGORIA: [MessageHandler(filters.TEXT & ~filters.COMMAND, modifica_categoria_nome)],
+    },
+    fallbacks=[CommandHandler("annulla", annulla)],
+))
 
     # Avvia il bot con polling
     print("🚀 Avvio del bot in modalità polling...")
