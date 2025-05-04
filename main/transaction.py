@@ -368,9 +368,9 @@ async def grafico_generale(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("📊 Nessuna transazione trovata per generare il grafico.")
         return
 
-    # Calcola il totale delle spese e delle entrate
-    spese = sum(t['importo'] for t in transazioni if t['importo'] < 0)
-    entrate = sum(t['importo'] for t in transazioni if t['importo'] > 0)
+    # Calcola il totale delle spese e delle entrate (convertendo in float)
+    spese = sum(float(t['importo']) for t in transazioni if t['importo'] < 0)
+    entrate = sum(float(t['importo']) for t in transazioni if t['importo'] > 0)
 
     # Dati per il grafico
     labels = ['Spese', 'Entrate']
@@ -405,6 +405,7 @@ async def grafico_generale(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Invia il grafico all'utente
     await update.message.reply_photo(photo=buffer, caption="📊 Ecco il grafico delle tue finanze!")
+
 # Main
 async def main():
     db_pool = await connect_db()
