@@ -19,17 +19,29 @@ async def connect_db():
     return await asyncpg.create_pool(os.getenv("DATABASE_URL"))
 
 async def crea_tabella(pool):
+    # Crea la tabella delle transazioni
     await pool.execute("""
         CREATE TABLE IF NOT EXISTS transazioni (
             id SERIAL PRIMARY KEY,
             user_id BIGINT,
             descrizione TEXT,
             importo NUMERIC,
-            data TIMESTAMP DEFAULT NOW()
+            data TIMESTAMP DEFAULT NOW(),
+            categoria_id INTEGER,
+            FOREIGN KEY (categoria_id) REFERENCES categorie(id) ON DELETE SET NULL
+        )
+    """)
+    # Crea la tabella delle categorie
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS categorie (
+            id SERIAL PRIMARY KEY,
+            user_id BIGINT,
+            nome TEXT NOT NULL,
+            UNIQUE(user_id, nome)  -- Ogni utente può avere categorie uniche
         )
     """)
 # Stati della conversazione
-DESCRIZIONE, IMPORTO = range(2)
+DESCRIZIONE, IMPORTO, CATEGORIA = range(3)
 
 # Lista globale per memorizzare le spese
 spese = []
@@ -74,6 +86,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• /gestisci - Modifica o elimina una transazione\n"
         "• /esporta - Esporta le tue transazioni\n\n"
         "• /grafico - Visualizza il grafico delle tue finanze\n\n"
+        "• /lista_categorie - Per visualizzare tutte le categorie presenti\n\n"
         "Inizia subito a gestire le tue finanze! 🚀",
         parse_mode="Markdown"
     )
@@ -88,9 +101,11 @@ async def set_bot_commands(app):
         BotCommand("gestisci", "Gestisci una transazione"),
         BotCommand("esporta", "Esporta le transazioni in CSV"),
         BotCommand("grafico", "Visualizza il grafico delle finanze"),
+        BotCommand("aggiungi_categoria", "Aggiungi una nuova categoria"),
+        BotCommand("lista_categorie", "Mostra le tue categorie"),
+        BotCommand("elimina_categoria", "Elimina una categoria"),
     ]
     await app.bot.set_my_commands(commands)
-
 # Conversazione /spesa
 async def spesa_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['tipo'] = 'spesa'
@@ -111,37 +126,38 @@ async def descrizione(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def importo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         importo = float(update.message.text)  # Converte il testo in un numero decimale
-        descrizione = context.user_data['descrizione']  # Prendi la descrizione dal contesto
-        tipo = context.user_data.get('tipo')  # Tipo (spesa o entrata)
-        user_id = update.effective_user.id  # ID dell'utente
+        context.user_data['importo'] = importo  # Salva l'importo nel contesto
 
-        # Se è una spesa, l'importo sarà negativo, altrimenti positivo
-        if tipo == 'spesa':
-            importo = -abs(importo)  # Imposta l'importo come negativo per una spesa
-        else:
-            importo = abs(importo)  # Assicura che l'importo sia positivo per un'entrata
-
-        # Connessione al pool DB
+        # Recupera le categorie dal database
+        user_id = update.effective_user.id
         pool = context.application.bot_data["db_pool"]
-        # Inserisci la transazione nel DB
-        await pool.execute(
-            "INSERT INTO transazioni (user_id, descrizione, importo) VALUES ($1, $2, $3)",
-            user_id, descrizione, importo
+        categorie = await pool.fetch(
+            "SELECT id, nome FROM categorie WHERE user_id = $1 ORDER BY nome",
+            user_id
         )
 
-        # Risposta utente
+        if not categorie:
+            await update.message.reply_text(
+                "⚠️ Non hai ancora creato categorie. Usa il comando /aggiungi_categoria per crearne una."
+            )
+            return ConversationHandler.END
+
+        # Crea una tastiera inline con le categorie
+        keyboard = [
+            [InlineKeyboardButton(c['nome'], callback_data=f"categoria_{c['id']}")]
+            for c in categorie
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
         await update.message.reply_text(
-            f"✅ {'Spesa' if tipo == 'spesa' else 'Entrata'} aggiunta: {descrizione} {importo:+.2f} €"
+            "Seleziona una categoria per questa transazione:",
+            reply_markup=reply_markup
         )
-
-        return ConversationHandler.END  # Termina la conversazione
+        return CATEGORIA
 
     except ValueError:
-        # Se l'importo non è valido
         await update.message.reply_text("Importo non valido. Per favore, scrivi un numero.")
         return IMPORTO
-
-
 
 # /gestisci
 async def gestisci(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -280,7 +296,37 @@ async def aggiorna_transazione(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         return IMPORTO
 
+async def seleziona_categoria(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
 
+    # Ottieni l'ID della categoria selezionata
+    if query.data.startswith("categoria_"):
+        categoria_id = int(query.data.split("_")[1])
+        context.user_data['categoria_id'] = categoria_id
+
+        # Salva la transazione nel database
+        descrizione = context.user_data['descrizione']
+        importo = context.user_data['importo']
+        tipo = context.user_data['tipo']
+        user_id = query.from_user.id
+
+        # Se è una spesa, l'importo sarà negativo, altrimenti positivo
+        if tipo == 'spesa':
+            importo = -abs(importo)
+        else:
+            importo = abs(importo)
+
+        pool = context.application.bot_data["db_pool"]
+        await pool.execute(
+            "INSERT INTO transazioni (user_id, descrizione, importo, categoria_id) VALUES ($1, $2, $3, $4)",
+            user_id, descrizione, importo, categoria_id
+        )
+
+        await query.edit_message_text(
+            f"✅ {'Spesa' if tipo == 'spesa' else 'Entrata'} aggiunta: {descrizione} {importo:+.2f} €"
+        )
+        return ConversationHandler.END
 
 # /annulla
 async def annulla(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -405,6 +451,66 @@ async def grafico_generale(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Invia il grafico all'utente
     await update.callback_query.message.reply_photo(photo=buffer, caption="📊 Ecco il grafico delle tue finanze!")
+
+async def aggiungi_categoria(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    pool = context.application.bot_data["db_pool"]
+
+    # Ottieni il nome della categoria dall'input dell'utente
+    if len(context.args) == 0:
+        await update.message.reply_text("❌ Per favore, specifica il nome della categoria. Esempio: /aggiungi_categoria Viaggi")
+        return
+
+    nome_categoria = " ".join(context.args)
+
+    # Inserisci la categoria nel database
+    try:
+        await pool.execute(
+            "INSERT INTO categorie (user_id, nome) VALUES ($1, $2)",
+            user_id, nome_categoria
+        )
+        await update.message.reply_text(f"✅ Categoria '{nome_categoria}' aggiunta con successo!")
+    except asyncpg.UniqueViolationError:
+        await update.message.reply_text(f"⚠️ La categoria '{nome_categoria}' esiste già.")
+
+async def lista_categorie(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    pool = context.application.bot_data["db_pool"]
+
+    # Recupera le categorie dal database
+    categorie = await pool.fetch(
+        "SELECT nome FROM categorie WHERE user_id = $1 ORDER BY nome",
+        user_id
+    )
+
+    if not categorie:
+        await update.message.reply_text("📂 Non hai ancora creato categorie.")
+        return
+
+    elenco = "\n".join([f"• {c['nome']}" for c in categorie])
+    await update.message.reply_text(f"📋 *Le tue categorie:*\n\n{elenco}", parse_mode="Markdown")
+
+async def elimina_categoria(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    pool = context.application.bot_data["db_pool"]
+
+    # Ottieni il nome della categoria dall'input dell'utente
+    if len(context.args) == 0:
+        await update.message.reply_text("❌ Per favore, specifica il nome della categoria da eliminare. Esempio: /elimina_categoria Viaggi")
+        return
+
+    nome_categoria = " ".join(context.args)
+
+    # Elimina la categoria dal database
+    result = await pool.execute(
+        "DELETE FROM categorie WHERE user_id = $1 AND nome = $2",
+        user_id, nome_categoria
+    )
+
+    if result == "DELETE 0":
+        await update.message.reply_text(f"⚠️ La categoria '{nome_categoria}' non esiste.")
+    else:
+        await update.message.reply_text(f"✅ Categoria '{nome_categoria}' eliminata con successo!")
 # Main
 async def main():
     db_pool = await connect_db()
@@ -427,19 +533,28 @@ async def main():
     app.add_handler(CommandHandler("esporta", esporta))
     app.add_handler(CommandHandler("grafico", grafico)) 
     app.add_handler(CallbackQueryHandler(grafico_callback, pattern="grafico_"))
+    app.add_handler(CommandHandler("aggiungi_categoria", aggiungi_categoria))
+    app.add_handler(CommandHandler("lista_categorie", lista_categorie))
+    app.add_handler(CommandHandler("elimina_categoria", elimina_categoria))
 
     app.add_handler(ConversationHandler(
-        entry_points=[CommandHandler("spesa", spesa_start)],
-        states={DESCRIZIONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, descrizione)],
-                IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, importo)]},
-        fallbacks=[CommandHandler("annulla", annulla)],
+    entry_points=[CommandHandler("spesa", spesa_start)],
+    states={
+        DESCRIZIONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, descrizione)],
+        IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, importo)],
+        CATEGORIA: [CallbackQueryHandler(seleziona_categoria, pattern="categoria_")]
+    },
+    fallbacks=[CommandHandler("annulla", annulla)],
     ))
 
     app.add_handler(ConversationHandler(
-        entry_points=[CommandHandler("entrata", entrata_start)],
-        states={DESCRIZIONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, descrizione)],
-                IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, importo)]},
-        fallbacks=[CommandHandler("annulla", annulla)],
+    entry_points=[CommandHandler("entrata", entrata_start)],
+    states={
+        DESCRIZIONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, descrizione)],
+        IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, importo)],
+        CATEGORIA: [CallbackQueryHandler(seleziona_categoria, pattern="categoria_")]
+    },
+    fallbacks=[CommandHandler("annulla", annulla)],
     ))
 
     app.add_handler(ConversationHandler(
