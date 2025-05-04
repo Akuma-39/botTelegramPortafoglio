@@ -230,58 +230,6 @@ async def gestisci_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except (IndexError, ValueError):
             await query.edit_message_text("⚠️ Errore: Formato del callback non valido.")
             return
-
-    # Gestione delle categorie
-    elif data.startswith("gestisci_categoria_"):
-        try:
-            categoria_id = int(data.split("_")[2])  # Ottieni l'ID della categoria
-            context.user_data['categoria_id'] = categoria_id
-
-            # Recupera il nome della categoria dal database
-            pool = context.application.bot_data["db_pool"]
-            categoria = await pool.fetchrow(
-                "SELECT nome FROM categorie WHERE id = $1",
-                categoria_id
-            )
-
-            if not categoria:
-                await query.edit_message_text("⚠️ Categoria non trovata.")
-                return ConversationHandler.END
-
-            context.user_data['categoria_nome'] = categoria['nome']
-
-            # Mostra le opzioni di gestione
-            keyboard = [
-                [InlineKeyboardButton("✏️ Modifica", callback_data="modifica_categoria"),
-                 InlineKeyboardButton("🗑️ Elimina", callback_data="elimina_categoria")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-
-            await query.edit_message_text(
-                f"🔍 *Hai selezionato la categoria:* {categoria['nome']}\n\n"
-                "Cosa vuoi fare?",
-                reply_markup=reply_markup,
-                parse_mode="Markdown"
-            )
-        except (IndexError, ValueError):
-            await query.edit_message_text("⚠️ Errore: Formato del callback non valido.")
-            return ConversationHandler.END
-
-    # Gestione della modifica della categoria
-    elif data == "modifica_categoria":
-        await query.edit_message_text("✏️ Scrivi il nuovo nome della categoria:")
-        return NOME_CATEGORIA
-
-    # Gestione dell'eliminazione della categoria
-    elif data == "elimina_categoria":
-        categoria_id = context.user_data.get('categoria_id')
-        if categoria_id:
-            pool = context.application.bot_data["db_pool"]
-            await pool.execute("DELETE FROM categorie WHERE id = $1", categoria_id)
-            await query.edit_message_text("🗑️ Categoria eliminata con successo!")
-        return ConversationHandler.END
-
-
     elif data == "modifica":
         await query.edit_message_text(
             "✏️ *Scrivi la nuova descrizione e il nuovo importo (o solo il nuovo importo) separati da uno spazio*",
@@ -588,6 +536,8 @@ async def gestisci_categoria_start(update: Update, context: ContextTypes.DEFAULT
         reply_markup=reply_markup
     )
     return CATEGORIA
+# Stato per aggiungere una categoria
+NOME_CATEGORIA = range(1)
 
 async def gestisci_categoria_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -648,8 +598,7 @@ async def gestisci_categoria_callback(update: Update, context: ContextTypes.DEFA
             await query.edit_message_text("🗑️ Categoria eliminata con successo!")
         return ConversationHandler.END
 
-# Stato per aggiungere una categoria
-NOME_CATEGORIA = range(1)
+
 
 async def aggiungi_categoria_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✏️ Scrivi il nome della categoria che vuoi aggiungere:")
