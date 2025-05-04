@@ -198,43 +198,86 @@ async def gestisci_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     data = query.data
 
-    if data.startswith("gestisci_"):
-        indice = int(data.split("_")[1])
-        transazioni = context.user_data.get('transazioni')
-        if not transazioni or indice >= len(transazioni):
-            await query.edit_message_text("⚠️ Errore: transazione non trovata.")
+    # Log per debug
+    print(f"Callback data ricevuto: {data}")
+
+    # Gestione delle transazioni
+    if data.startswith("gestisci_") and not data.startswith("gestisci_categoria_"):
+        try:
+            indice = int(data.split("_")[1])  # Ottieni l'indice della transazione
+            transazioni = context.user_data.get('transazioni')
+            if not transazioni or indice >= len(transazioni):
+                await query.edit_message_text("⚠️ Errore: transazione non trovata.")
+                return
+
+            transazione = transazioni[indice]
+            context.user_data['indice'] = indice
+            context.user_data['transazione_id'] = transazione['id']
+
+            keyboard = [
+                [InlineKeyboardButton("✏️ Modifica", callback_data="modifica"),
+                 InlineKeyboardButton("🗑️ Elimina", callback_data="elimina")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(
+                f"🔍 *Hai selezionato:*\n"
+                f"• *{transazione['descrizione']}*: {'-' if transazione['importo'] < 0 else ''}{abs(transazione['importo']):.2f} €\n\n"
+                "Cosa vuoi fare?",
+                reply_markup=reply_markup,
+                parse_mode="Markdown"
+            )
+        except (IndexError, ValueError):
+            await query.edit_message_text("⚠️ Errore: Formato del callback non valido.")
             return
 
-        transazione = transazioni[indice]
-        context.user_data['indice'] = indice
-        context.user_data['transazione_id'] = transazione['id']
+    # Gestione delle categorie
+    elif data.startswith("gestisci_categoria_"):
+        try:
+            categoria_id = int(data.split("_")[2])  # Ottieni l'ID della categoria
+            context.user_data['categoria_id'] = categoria_id
 
-        keyboard = [
-            [InlineKeyboardButton("✏️ Modifica", callback_data="modifica"),
-             InlineKeyboardButton("🗑️ Elimina", callback_data="elimina")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(
-            f"🔍 *Hai selezionato:*\n"
-            f"• *{transazione['descrizione']}*: {'-' if transazione['importo'] < 0 else ''}{abs(transazione['importo']):.2f} €\n\n"
-            "Cosa vuoi fare?",
-            reply_markup=reply_markup,
-            parse_mode="Markdown"
-        )
-
-    elif data == "modifica":
-        await query.edit_message_text(
-            "✏️ *Scrivi la nuova descrizione e il nuovo importo (o solo il nuovo importo) separati da uno spazio*",
-            parse_mode="Markdown"
-        )
-        return IMPORTO
-
-    elif data == "elimina":
-        transazione_id = context.user_data.get('transazione_id')
-        if transazione_id:
+            # Recupera il nome della categoria dal database
             pool = context.application.bot_data["db_pool"]
-            await pool.execute("DELETE FROM transazioni WHERE id = $1", transazione_id)
-            await query.edit_message_text("🗑️ *Transazione eliminata con successo!*", parse_mode="Markdown")
+            categoria = await pool.fetchrow(
+                "SELECT nome FROM categorie WHERE id = $1",
+                categoria_id
+            )
+
+            if not categoria:
+                await query.edit_message_text("⚠️ Categoria non trovata.")
+                return ConversationHandler.END
+
+            context.user_data['categoria_nome'] = categoria['nome']
+
+            # Mostra le opzioni di gestione
+            keyboard = [
+                [InlineKeyboardButton("✏️ Modifica", callback_data="modifica_categoria"),
+                 InlineKeyboardButton("🗑️ Elimina", callback_data="elimina_categoria")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await query.edit_message_text(
+                f"🔍 *Hai selezionato la categoria:* {categoria['nome']}\n\n"
+                "Cosa vuoi fare?",
+                reply_markup=reply_markup,
+                parse_mode="Markdown"
+            )
+        except (IndexError, ValueError):
+            await query.edit_message_text("⚠️ Errore: Formato del callback non valido.")
+            return ConversationHandler.END
+
+    # Gestione della modifica della categoria
+    elif data == "modifica_categoria":
+        await query.edit_message_text("✏️ Scrivi il nuovo nome della categoria:")
+        return NOME_CATEGORIA
+
+    # Gestione dell'eliminazione della categoria
+    elif data == "elimina_categoria":
+        categoria_id = context.user_data.get('categoria_id')
+        if categoria_id:
+            pool = context.application.bot_data["db_pool"]
+            await pool.execute("DELETE FROM categorie WHERE id = $1", categoria_id)
+            await query.edit_message_text("🗑️ Categoria eliminata con successo!")
         return ConversationHandler.END
 
 
