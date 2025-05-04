@@ -76,8 +76,10 @@ async def esporta(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # Comando /start
+from telegram.helpers import escape_markdown
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
+    testo = (
         "👋 *Benvenuto nel Bot di Gestione Finanziaria!* 💰\n\n"
         "Ecco cosa puoi fare:\n"
         "• /spesa - Aggiungi una spesa\n"
@@ -87,9 +89,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• /esporta - Esporta le tue transazioni\n\n"
         "• /grafico - Visualizza il grafico delle tue finanze\n\n"
         "• /lista_categorie - Per visualizzare tutte le categorie presenti\n\n"
-        "Inizia subito a gestire le tue finanze! 🚀",
-        parse_mode="Markdown"
+        "Inizia subito a gestire le tue finanze! 🚀"
     )
+
+    # Escapa i caratteri speciali
+    testo = escape_markdown(testo, version=2)
+
+    await update.message.reply_text(testo, parse_mode="MarkdownV2")
 
 async def set_bot_commands(app):
     commands = [
