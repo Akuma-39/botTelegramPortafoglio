@@ -9,6 +9,7 @@ import io
 from aiohttp import web
 import asyncio  # Importa asyncio per gestire l'event loop
 import nest_asyncio
+import matplotlib.pyplot as plt
 
 # Applica nest_asyncio per evitare conflitti con l'event loop
 nest_asyncio.apply()
@@ -70,7 +71,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• /entrata - Aggiungi un'entrata\n"
         "• /riepilogo - Mostra il riepilogo delle tue transazioni\n"
         "• /gestisci - Modifica o elimina una transazione\n"
-        "• /annulla - Annulla l'operazione corrente\n\n"
+        "• /esporta - Esporta le tue transazioni\n\n"
+        "• /grafico - Visualizza il grafico delle tue finanze\n\n"
         "Inizia subito a gestire le tue finanze! 🚀",
         parse_mode="Markdown"
     )
@@ -84,7 +86,7 @@ async def set_bot_commands(app):
         BotCommand("annulla", "Annulla l'operazione corrente"),
         BotCommand("gestisci", "Gestisci una transazione"),
         BotCommand("esporta", "Esporta le transazioni in CSV"),
-
+        BotCommand("grafico", "Visualizza il grafico delle finanze"),
     ]
     await app.bot.set_my_commands(commands)
 
@@ -322,6 +324,86 @@ async def comando_non_riconosciuto(update: Update, context: ContextTypes.DEFAULT
 async def messaggio_generico(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⚠️ --- Non ho capito. Usa un comando come /spesa, /entrata o /riepilogo --- ⚠️")
 
+# Funzione per generare il grafico a torta
+async def grafico(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Crea la tastiera inline con le opzioni
+    keyboard = [
+        [InlineKeyboardButton("📊 Generale", callback_data="grafico_generale")],
+        [InlineKeyboardButton("📉 Solo Spese", callback_data="grafico_spese")],
+        [InlineKeyboardButton("📈 Solo Entrate", callback_data="grafico_entrate")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    # Invia il messaggio con la tastiera
+    await update.message.reply_text(
+        "Scegli il tipo di grafico che vuoi visualizzare:",
+        reply_markup=reply_markup
+    )
+# Funzione per generare il grafico a torta
+async def grafico_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()  # Rispondi al callback per evitare timeout
+    if query.data == "grafico_spese":
+        await query.edit_message_text("📉 Funzione da implementare...")
+        return
+    elif query.data == "grafico_entrate":
+        await query.edit_message_text("📈 Funzione da implementare...")
+        return
+    elif query.data == "grafico_generale":
+        await query.edit_message_text("📊 Generando il grafico generale...")
+        await grafico_generale(update, context)
+ 
+async def grafico_generale(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    pool = context.application.bot_data["db_pool"]
+
+    # Recupera le transazioni dal database
+    transazioni = await pool.fetch(
+        "SELECT descrizione, importo FROM transazioni WHERE user_id = $1",
+        user_id
+    )
+
+    if not transazioni:
+        await update.message.reply_text("📊 Nessuna transazione trovata per generare il grafico.")
+        return
+
+    # Calcola il totale delle spese e delle entrate
+    spese = sum(t['importo'] for t in transazioni if t['importo'] < 0)
+    entrate = sum(t['importo'] for t in transazioni if t['importo'] > 0)
+
+    # Dati per il grafico
+    labels = ['Spese', 'Entrate']
+    valori = [abs(spese), entrate]
+
+    # Funzione per formattare le etichette con valori assoluti e percentuali
+    def format_labels(pct, all_vals):
+        absolute = int(round(pct / 100. * sum(all_vals)))
+        return f"{absolute} €\n({pct:.1f}%)"
+
+    # Genera il grafico a torta
+    plt.figure(figsize=(6, 6))
+    wedges, texts, autotexts = plt.pie(
+        valori,
+        labels=labels,
+        autopct=lambda pct: format_labels(pct, valori),
+        startangle=90,
+        colors=['red', 'green']
+    )
+    plt.title("Andamento delle Finanze")
+
+    # Personalizza lo stile delle etichette
+    for text in autotexts:
+        text.set_color("white")
+        text.set_fontsize(10)
+
+    # Salva il grafico in un buffer
+    buffer = io.BytesIO()
+    plt.savefig(buffer, format='png')
+    buffer.seek(0)
+    plt.close()
+
+    # Invia il grafico all'utente
+    await update.message.reply_photo(photo=buffer, caption="📊 Ecco il grafico delle tue finanze!")
 # Main
 async def main():
     db_pool = await connect_db()
@@ -342,6 +424,7 @@ async def main():
     app.add_handler(CommandHandler("riepilogo", riepilogo))
     app.add_handler(CommandHandler("gestisci", gestisci))
     app.add_handler(CommandHandler("esporta", esporta))
+    app.add_handler(CommandHandler("grafico", grafico)) 
 
     app.add_handler(ConversationHandler(
         entry_points=[CommandHandler("spesa", spesa_start)],
