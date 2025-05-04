@@ -693,6 +693,7 @@ async def modifica_categoria_nome(update: Update, context: ContextTypes.DEFAULT_
     except asyncpg.UniqueViolationError:
         await update.message.reply_text(f"⚠️ La categoria '{nuovo_nome}' esiste già.")
 
+    # Esci automaticamente dalla conversazione
     return ConversationHandler.END
 
 # Main
@@ -763,7 +764,7 @@ async def main():
         NOME_CATEGORIA: [MessageHandler(filters.TEXT & ~filters.COMMAND, modifica_categoria_nome)],
     },
     fallbacks=[CommandHandler("annulla", annulla)],
-))
+    ))
 
     # Avvia il bot con polling
     print("🚀 Avvio del bot in modalità polling...")
