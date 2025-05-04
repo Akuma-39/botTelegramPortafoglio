@@ -365,7 +365,7 @@ async def grafico_generale(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     if not transazioni:
-        await update.message.reply_text("📊 Nessuna transazione trovata per generare il grafico.")
+        await update.callback_query.message.reply_text("📊 Nessuna transazione trovata per generare il grafico.")
         return
 
     # Calcola il totale delle spese e delle entrate (convertendo in float)
@@ -404,8 +404,7 @@ async def grafico_generale(update: Update, context: ContextTypes.DEFAULT_TYPE):
     plt.close()
 
     # Invia il grafico all'utente
-    await update.message.reply_photo(photo=buffer, caption="📊 Ecco il grafico delle tue finanze!")
-
+    await update.callback_query.message.reply_photo(photo=buffer, caption="📊 Ecco il grafico delle tue finanze!")
 # Main
 async def main():
     db_pool = await connect_db()
