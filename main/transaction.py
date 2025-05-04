@@ -1,3 +1,4 @@
+from ast import Call
 from telegram import Update, BotCommand, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, ConversationHandler, CallbackQueryHandler, filters
 import os
@@ -425,6 +426,7 @@ async def main():
     app.add_handler(CommandHandler("gestisci", gestisci))
     app.add_handler(CommandHandler("esporta", esporta))
     app.add_handler(CommandHandler("grafico", grafico)) 
+    app.add_handler(CallbackQueryHandler(grafico_callback, pattern="grafico_"))
 
     app.add_handler(ConversationHandler(
         entry_points=[CommandHandler("spesa", spesa_start)],
