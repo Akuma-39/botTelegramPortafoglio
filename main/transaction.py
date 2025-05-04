@@ -549,7 +549,7 @@ async def gestisci_categoria_callback(update: Update, context: ContextTypes.DEFA
     print(f"Callback data ricevuto: {data}")
 
     # Gestione della selezione della categoria
-    if data.startswith("gestisci_categoria_"):
+    if data.startswith("gestisci_categoria"):
         try:
             categoria_id = int(data.split("_")[2])  # Ottieni l'ID della categoria
             context.user_data['categoria_id'] = categoria_id
