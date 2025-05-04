@@ -1,4 +1,5 @@
 from ast import Call
+from importlib.metadata import EntryPoint
 from telegram import Update, BotCommand, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, ConversationHandler, CallbackQueryHandler, filters
 import os
@@ -717,6 +718,7 @@ async def main():
     app.add_handler(CommandHandler("gestisci", gestisci))
     app.add_handler(CommandHandler("esporta", esporta))
     app.add_handler(CommandHandler("grafico", grafico))
+    app.add_handler(CommandHandler("gestisci_categoria", gestisci_categoria_start))
     app.add_handler(CommandHandler("lista_categorie", lista_categorie))
     app.add_handler(CallbackQueryHandler(grafico_callback, pattern="grafico_"))
 
@@ -756,14 +758,12 @@ async def main():
     ))
 
     app.add_handler(ConversationHandler(
-    entry_points=[CommandHandler("gestisci_categoria", gestisci_categoria_start)],
-    states={
-        CATEGORIA: [CallbackQueryHandler(gestisci_categoria_callback, pattern="gestisci_categoria_"),
-                    CallbackQueryHandler(gestisci_categoria_callback, pattern="modifica_categoria"),
-                    CallbackQueryHandler(gestisci_categoria_callback, pattern="elimina_categoria")],
-        NOME_CATEGORIA: [MessageHandler(filters.TEXT & ~filters.COMMAND, modifica_categoria_nome)],
-    },
-    fallbacks=[CommandHandler("annulla", annulla)],
+        entry_points=[CallbackQueryHandler(gestisci_categoria_callback)],
+        states={
+            NOME_CATEGORIA: [MessageHandler(filters.TEXT & ~filters.COMMAND, modifica_categoria_nome)],
+        },
+        fallbacks=[CommandHandler("annulla", annulla)],
+        per_message=False,
     ))
 
     # Avvia il bot con polling
