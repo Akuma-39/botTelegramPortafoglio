@@ -517,6 +517,77 @@ async def elimina_categoria(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ La categoria '{nome_categoria}' non esiste.")
     else:
         await update.message.reply_text(f"✅ Categoria '{nome_categoria}' eliminata con successo!")
+
+async def elimina_categoria_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    pool = context.application.bot_data["db_pool"]
+
+    # Recupera le categorie dal database
+    categorie = await pool.fetch(
+        "SELECT id, nome FROM categorie WHERE user_id = $1 ORDER BY nome",
+        user_id
+    )
+
+    if not categorie:
+        await update.message.reply_text("📂 Non hai ancora creato categorie.")
+        return ConversationHandler.END
+
+    # Crea una tastiera inline con le categorie
+    keyboard = [
+        [InlineKeyboardButton(c['nome'], callback_data=f"elimina_categoria_{c['id']}")]
+        for c in categorie
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(
+        "🗑️ Seleziona la categoria che vuoi eliminare:",
+        reply_markup=reply_markup
+    )
+    return CATEGORIA
+
+async def elimina_categoria_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    # Ottieni l'ID della categoria selezionata
+    if query.data.startswith("elimina_categoria_"):
+        categoria_id = int(query.data.split("_")[2])
+        pool = context.application.bot_data["db_pool"]
+
+        # Elimina la categoria dal database
+        await pool.execute(
+            "DELETE FROM categorie WHERE id = $1",
+            categoria_id
+        )
+        await query.edit_message_text("✅ Categoria eliminata con successo!")
+
+    return ConversationHandler.END
+
+# Stato per aggiungere una categoria
+NOME_CATEGORIA = range(1)
+
+async def aggiungi_categoria_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("✏️ Scrivi il nome della categoria che vuoi aggiungere:")
+    return NOME_CATEGORIA
+
+async def aggiungi_categoria_nome(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    pool = context.application.bot_data["db_pool"]
+
+    nome_categoria = update.message.text.strip()
+
+    # Inserisci la categoria nel database
+    try:
+        await pool.execute(
+            "INSERT INTO categorie (user_id, nome) VALUES ($1, $2)",
+            user_id, nome_categoria
+        )
+        await update.message.reply_text(f"✅ Categoria '{nome_categoria}' aggiunta con successo!")
+    except asyncpg.UniqueViolationError:
+        await update.message.reply_text(f"⚠️ La categoria '{nome_categoria}' esiste già.")
+
+    return ConversationHandler.END
+
 # Main
 async def main():
     db_pool = await connect_db()
@@ -568,6 +639,22 @@ async def main():
         states={IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, aggiorna_transazione)]},
         fallbacks=[CommandHandler("annulla", annulla)],
         per_message=False,
+    ))
+
+    app.add_handler(ConversationHandler(
+        entry_points=[CommandHandler("aggiungi_categoria", aggiungi_categoria_start)],
+        states={
+            NOME_CATEGORIA: [MessageHandler(filters.TEXT & ~filters.COMMAND, aggiungi_categoria_nome)],
+        },
+        fallbacks=[CommandHandler("annulla", annulla)],
+    ))
+
+    app.add_handler(ConversationHandler(
+        entry_points=[CommandHandler("elimina_categoria", elimina_categoria_start)],
+        states={
+            CATEGORIA: [CallbackQueryHandler(elimina_categoria_callback, pattern="elimina_categoria_")],
+        },
+        fallbacks=[CommandHandler("annulla", annulla)],
     ))
 
     # Avvia il bot con polling
