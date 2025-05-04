@@ -109,7 +109,7 @@ async def set_bot_commands(app):
         BotCommand("grafico", "Visualizza il grafico delle finanze"),
         BotCommand("aggiungi_categoria", "Aggiungi una nuova categoria"),
         BotCommand("lista_categorie", "Mostra le tue categorie"),
-        BotCommand("gestisci_categorie", "Gestisci una categoria"),
+        BotCommand("gestisci_categoria", "Gestisci una categoria"),
     ]
     await app.bot.set_my_commands(commands)
 # Conversazione /spesa
@@ -521,7 +521,7 @@ async def elimina_categoria(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def gestisci_categoria_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     pool = context.application.bot_data["db_pool"]
-
+    print(f"sto gestendo le categorie per l'utente {user_id}")
     # Recupera le categorie dal database
     categorie = await pool.fetch(
         "SELECT id, nome FROM categorie WHERE user_id = $1 ORDER BY nome",
