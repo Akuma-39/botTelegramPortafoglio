@@ -230,6 +230,8 @@ async def gestisci_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except (IndexError, ValueError):
             await query.edit_message_text("⚠️ Errore: Formato del callback non valido.")
             return
+
+
     elif data == "modifica":
         await query.edit_message_text(
             "✏️ *Scrivi la nuova descrizione e il nuovo importo (o solo il nuovo importo) separati da uno spazio*",
@@ -549,7 +551,7 @@ async def gestisci_categoria_callback(update: Update, context: ContextTypes.DEFA
     print(f"Callback data ricevuto: {data}")
 
     # Gestione della selezione della categoria
-    if data.startswith("gestisci_categoria"):
+    if data.startswith("gestisci_categoria_"):
         try:
             categoria_id = int(data.split("_")[2])  # Ottieni l'ID della categoria
             context.user_data['categoria_id'] = categoria_id
@@ -692,13 +694,6 @@ async def main():
     ))
 
     app.add_handler(ConversationHandler(
-        entry_points=[CallbackQueryHandler(gestisci_callback)],
-        states={IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, aggiorna_transazione)]},
-        fallbacks=[CommandHandler("annulla", annulla)],
-        per_message=False,
-    ))
-
-    app.add_handler(ConversationHandler(
         entry_points=[CommandHandler("aggiungi_categoria", aggiungi_categoria_start)],
         states={
             NOME_CATEGORIA: [MessageHandler(filters.TEXT & ~filters.COMMAND, aggiungi_categoria_nome)],
@@ -707,10 +702,17 @@ async def main():
     ))
 
     app.add_handler(ConversationHandler(
-        entry_points=[CallbackQueryHandler(gestisci_categoria_callback)],
-        states={
-            NOME_CATEGORIA: [MessageHandler(filters.TEXT & ~filters.COMMAND, modifica_categoria_nome)],
-        },
+    entry_points=[CallbackQueryHandler(gestisci_categoria_callback, pattern="gestisci_categoria_")],
+    states={
+        NOME_CATEGORIA: [MessageHandler(filters.TEXT & ~filters.COMMAND, modifica_categoria_nome)],
+    },
+    fallbacks=[CommandHandler("annulla", annulla)],
+    per_message=False,
+    ))
+
+    app.add_handler(ConversationHandler(
+        entry_points=[CallbackQueryHandler(gestisci_callback, pattern="gestisci_")],
+        states={IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, aggiorna_transazione)]},
         fallbacks=[CommandHandler("annulla", annulla)],
         per_message=False,
     ))
