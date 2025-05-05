@@ -91,7 +91,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• /gestisci - Modifica o elimina una transazione\n"
         "• /esporta - Esporta le tue transazioni\n\n"
         "• /grafico - Visualizza il grafico delle tue finanze\n\n"
-        "• /lista_categorie - Per visualizzare tutte le categorie presenti\n\n"
+        "• /categorie - Per visualizzare tutte le categorie presenti\n\n"
         "Inizia subito a gestire le tue finanze! 🚀"
     )
 
@@ -111,7 +111,7 @@ async def set_bot_commands(app):
         BotCommand("esporta", "Esporta le transazioni in CSV"),
         BotCommand("grafico", "Visualizza il grafico delle finanze"),
         BotCommand("aggiungi_categoria", "Aggiungi una nuova categoria"),
-        BotCommand("lista_categorie", "Mostra le tue categorie"),
+        BotCommand("categorie", "Mostra le tue categorie"),
         BotCommand("gestisci_categoria", "Gestisci una categoria"),
     ]
     await app.bot.set_my_commands(commands)
@@ -639,8 +639,13 @@ async def gestisci_categoria_callback(update: Update, context: ContextTypes.DEFA
 
     # Gestione della modifica della categoria
     elif data == "modifica_categoria":
-        await query.edit_message_text("✏️ Scrivi il nuovo nome della categoria:")
-        return NOME_CATEGORIA
+        # Controlla se l'utente sta già modificando una categoria
+        if 'categoria_id' in context.user_data:
+            await query.edit_message_text("✏️ Scrivi il nuovo nome della categoria:")
+            return NOME_CATEGORIA
+        else:
+            await query.edit_message_text("⚠️ Errore: Nessuna categoria selezionata per la modifica.")
+            return ConversationHandler.END
 
     # Gestione dell'eliminazione della categoria
     elif data == "elimina_categoria":
@@ -696,6 +701,9 @@ async def modifica_categoria_nome(update: Update, context: ContextTypes.DEFAULT_
     except asyncpg.UniqueViolationError:
         await update.message.reply_text(f"⚠️ La categoria '{nuovo_nome}' esiste già.")
 
+    # Resetta il contesto per evitare conflitti
+    context.user_data.clear()
+
     # Esci automaticamente dalla conversazione
     return ConversationHandler.END
 
@@ -721,7 +729,7 @@ async def main():
     app.add_handler(CommandHandler("esporta", esporta))
     app.add_handler(CommandHandler("grafico", grafico))
     app.add_handler(CommandHandler("gestisci_categoria", gestisci_categoria_start))
-    app.add_handler(CommandHandler("lista_categorie", lista_categorie))
+    app.add_handler(CommandHandler("categorie", lista_categorie))
     app.add_handler(CallbackQueryHandler(grafico_callback, pattern="grafico_"))
 
     app.add_handler(ConversationHandler(
