@@ -1,5 +1,4 @@
 from ast import Call
-from http.client import RANGE_NOT_SATISFIABLE
 from importlib.metadata import EntryPoint
 from matplotlib.pylab import rand
 from telegram import Bot, Update, BotCommand, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
