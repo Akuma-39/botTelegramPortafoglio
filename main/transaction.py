@@ -1,5 +1,7 @@
 from ast import Call
 from importlib.metadata import EntryPoint
+from select import kevent
+from matplotlib.backend_bases import key_press_handler
 from matplotlib.pylab import rand
 from telegram import Bot, Update, BotCommand, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, ConversationHandler, CallbackQueryHandler, filters
@@ -55,7 +57,7 @@ async def crea_tabella(pool):
     """)
 
 # Stati della conversazione
-DESCRIZIONE, IMPORTO, CATEGORIA = range(3)
+DESCRIZIONE, IMPORTO, CATEGORIA, CARTA = range(4)
 
 # Lista globale per memorizzare le spese
 spese = []
@@ -161,7 +163,7 @@ async def importo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if not categorie:
             await update.message.reply_text(
-                "⚠️ Non hai ancora creato categorie. Usa il comando /aggiungi_categoria per crearne una."
+                "⚠️ Non hai ancora creato categorie. Usa il comando /aggiungi_categoria per crearne una e riprovare."
             )
             return ConversationHandler.END
 
@@ -384,11 +386,48 @@ async def seleziona_categoria(update: Update, context: ContextTypes.DEFAULT_TYPE
         categoria_id = int(query.data.split("_")[1])
         context.user_data['categoria_id'] = categoria_id
 
+        # Recupera le carte dal database
+        user_id = query.from_user.id
+        pool = context.application.bot_data["db_pool"]
+        carte = await pool.fetch(
+            "SELECT id, nome FROM carte WHERE user_id = $1 ORDER BY nome",
+            user_id
+        )
+
+        if not carte:
+            await query.edit_message_text(
+                "⚠️ Non hai ancora aggiunto metodi di pagamento. Usa il comando /aggiungi_carta per crearne uno."
+            )
+            return ConversationHandler.END
+
+        # Crea una tastiera inline con le carte
+        keyboard = [
+            [InlineKeyboardButton(c['nome'], callback_data=f"carta_{c['id']}")]
+            for c in carte
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(
+            "Seleziona una carta per questa transazione:",
+            reply_markup=reply_markup
+        )
+        return CARTA
+
+async def seleziona_carta(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    # Ottieni l'ID della carta selezionata
+    if query.data.startswith("carta_"):
+        carta_id = int(query.data.split("_")[1])
+        context.user_data['carta_id'] = carta_id
+
         # Salva la transazione nel database
         descrizione = context.user_data['descrizione']
         importo = context.user_data['importo']
         tipo = context.user_data['tipo']
         user_id = query.from_user.id
+        categoria_id = context.user_data['categoria_id']
 
         # Se è una spesa, l'importo sarà negativo, altrimenti positivo
         if tipo == 'spesa':
@@ -398,8 +437,8 @@ async def seleziona_categoria(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         pool = context.application.bot_data["db_pool"]
         await pool.execute(
-            "INSERT INTO transazioni (user_id, descrizione, importo, categoria_id) VALUES ($1, $2, $3, $4)",
-            user_id, descrizione, importo, categoria_id
+            "INSERT INTO transazioni (user_id, descrizione, importo, categoria_id, metodoPagamento) VALUES ($1, $2, $3, $4, $5)",
+            user_id, descrizione, importo, categoria_id, carta_id
         )
 
         await query.edit_message_text(
@@ -418,20 +457,31 @@ async def riepilogo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     pool = context.application.bot_data["db_pool"]
 
-    transazioni = await pool.fetch(
-        "SELECT descrizione, importo FROM transazioni WHERE user_id = $1 ORDER BY data DESC",
-        user_id
-    )
+    transazioni = await pool.fetch("""
+        SELECT 
+            t.descrizione, 
+            t.importo, 
+            c.nome AS categoria, 
+            ca.nome AS carta
+        FROM transazioni t
+        LEFT JOIN categorie c ON t.categoria_id = c.id
+        LEFT JOIN carte ca ON t.metodoPagamento = ca.id
+        WHERE t.user_id = $1
+        ORDER BY t.data DESC """, user_id)
+
 
     if not transazioni:
         await update.message.reply_text("📂 *Nessuna transazione registrata.*", parse_mode="Markdown")
         return
-
+    # Calcola il totale delle spese e delle entrate
     totale = sum(t['importo'] for t in transazioni)
+    # Crea la lista delle transazioni
     lista = "\n".join([
-        f"• *{t['descrizione']}*: {'-' if t['importo'] < 0 else ''}{abs(t['importo']):.2f} €"
+        f"• *{t['descrizione']}*: {'-' if t['importo'] < 0 else ''}{abs(t['importo']):.2f} €\n"
+        f"  Categoria: {t['categoria'] or 'Nessuna'} | Carta: {t['carta'] or 'Nessuna'}"
         for t in transazioni
     ])
+    # Invia il messaggio di riepilogo
     await update.message.reply_text(
         f"📊 *Riepilogo delle tue transazioni:*\n\n{lista}\n\n"
         f"💼 *Totale*: {totale:.2f} €",
@@ -741,7 +791,8 @@ async def main():
     states={
         DESCRIZIONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, descrizione)],
         IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, importo)],
-        CATEGORIA: [CallbackQueryHandler(seleziona_categoria, pattern="categoria_")]
+        CATEGORIA: [CallbackQueryHandler(seleziona_categoria, pattern="categoria_")],
+        CARTA: [CallbackQueryHandler(seleziona_carta, pattern="carta_")]
     },
     fallbacks=[CommandHandler("annulla", annulla)],
     ))
@@ -751,7 +802,8 @@ async def main():
     states={
         DESCRIZIONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, descrizione)],
         IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, importo)],
-        CATEGORIA: [CallbackQueryHandler(seleziona_categoria, pattern="categoria_")]
+        CATEGORIA: [CallbackQueryHandler(seleziona_categoria, pattern="categoria_")],
+        CARTA: [CallbackQueryHandler(seleziona_carta, pattern="carta_")]
     },
     fallbacks=[CommandHandler("annulla", annulla)],
     ))
@@ -760,7 +812,8 @@ async def main():
         entry_points=[CommandHandler("aggiungi_carta", aggiungi_carta_start)],
         states={
             NOME_CARTA: [MessageHandler(filters.TEXT & ~filters.COMMAND, aggiungi_carta_nome)],
-        }
+        },
+        fallbacks=[CommandHandler("annulla", annulla)],
     ))
     app.add_handler(ConversationHandler(
         entry_points=[CommandHandler("aggiungi_categoria", aggiungi_categoria_start)],
