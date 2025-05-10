@@ -46,8 +46,7 @@ DESCRIZIONE, IMPORTO, CATEGORIA = range(3)
 
 # Lista globale per memorizzare le spese
 spese = []
-# Stato per aggiungere una categoria
-NOME_CATEGORIA = range(1)
+
 
 # Funzione per esportare le spese in CSV
 async def esporta(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -195,6 +194,8 @@ async def gestisci(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
+# Stato per aggiungere una categoria
+NOME_CATEGORIA = range(1)
 
 async def gestisci_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -573,9 +574,8 @@ async def gestisci_categoria_start(update: Update, context: ContextTypes.DEFAULT
         "SELECT id, nome FROM categorie WHERE user_id = $1 ORDER BY nome",
         user_id
     )
-
     if not categorie:
-        await update.message.reply_text("📂 Non hai ancora creato categorie.")
+        await update.message.reply_text("📂 Non hai ancora creato categorie. Utilizza il comando aggiungi categoria per crearne!!")
         return ConversationHandler.END
 
     # Crea una tastiera inline con le categorie
@@ -591,6 +591,8 @@ async def gestisci_categoria_start(update: Update, context: ContextTypes.DEFAULT
     )
     return CATEGORIA
 
+# Aggiungi uno stato per la gestione delle categorie
+GESTIONE_CATEGORIA = range(1)
 
 async def gestisci_categoria_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -615,7 +617,7 @@ async def gestisci_categoria_callback(update: Update, context: ContextTypes.DEFA
             )
 
             if not categoria:
-                await query.edit_message_text("⚠️ Categoria non trovata.")
+                await query.edit_message_text("⚠️ Categoria non trovata!!")
                 return ConversationHandler.END
 
             context.user_data['categoria_nome'] = categoria['nome']
@@ -633,6 +635,7 @@ async def gestisci_categoria_callback(update: Update, context: ContextTypes.DEFA
                 reply_markup=reply_markup,
                 parse_mode="Markdown"
             )
+            return GESTIONE_CATEGORIA
         except (IndexError, ValueError):
             await query.edit_message_text("⚠️ Errore: Formato del callback non valido.")
             return ConversationHandler.END
@@ -652,8 +655,14 @@ async def gestisci_categoria_callback(update: Update, context: ContextTypes.DEFA
         categoria_id = context.user_data.get('categoria_id')
         if categoria_id:
             pool = context.application.bot_data["db_pool"]
-            await pool.execute("DELETE FROM categorie WHERE id = $1", categoria_id)
-            await query.edit_message_text("🗑️ Categoria eliminata con successo!")
+            try:
+                await pool.execute("DELETE FROM categorie WHERE id = $1", categoria_id)
+                await query.edit_message_text("🗑️ Categoria eliminata con successo!")
+            except asyncpg.ForeignKeyViolationError:
+                await query.edit_message_text("⚠️ Errore: Non puoi eliminare una categoria associata a transazioni.")
+        else:
+            await query.edit_message_text("⚠️ Errore: Nessuna categoria selezionata per l'eliminazione.")
+            return ConversationHandler.END
         return ConversationHandler.END
 
 
@@ -690,20 +699,18 @@ async def modifica_categoria_nome(update: Update, context: ContextTypes.DEFAULT_
         return ConversationHandler.END
 
     pool = context.application.bot_data["db_pool"]
-
     try:
         # Aggiorna il nome della categoria nel database
         await pool.execute(
             "UPDATE categorie SET nome = $1 WHERE id = $2 AND user_id = $3",
             nuovo_nome, categoria_id, user_id
         )
-        await update.message.reply_text(f"✅ Categoria aggiornata con successo: {nuovo_nome}")
+        await update.message.reply_text(f"✅ Categoria aggiornata con successo, nuovo nome: {nuovo_nome}")
     except asyncpg.UniqueViolationError:
-        await update.message.reply_text(f"⚠️ La categoria '{nuovo_nome}' esiste già.")
+        await update.message.reply_text(f"⚠️ La categoria ccon nome : '{nuovo_nome}' esiste già, sceglie un altro nome.")
 
     # Resetta il contesto per evitare conflitti
     context.user_data.clear()
-
     # Esci automaticamente dalla conversazione
     return ConversationHandler.END
 
@@ -770,6 +777,7 @@ async def main():
     app.add_handler(ConversationHandler(
         entry_points=[CallbackQueryHandler(gestisci_categoria_callback)],
         states={
+            GESTIONE_CATEGORIA: [CallbackQueryHandler(gestisci_categoria_callback)],
             NOME_CATEGORIA: [MessageHandler(filters.TEXT & ~filters.COMMAND, modifica_categoria_nome)],
         },
         fallbacks=[CommandHandler("annulla", annulla)],
