@@ -14,6 +14,7 @@ from aiohttp import web
 import asyncio  # Importa asyncio per gestire l'event loop
 import nest_asyncio
 import matplotlib.pyplot as plt
+from metrics import handle_metrics
 
 # Applica nest_asyncio per evitare conflitti con l'event loop
 nest_asyncio.apply()
@@ -844,6 +845,8 @@ async def start_dummy_server():
     PORT = int(os.environ.get("PORT", 8080))  # Porta fornita da Render
     app = web.Application()
     app.router.add_get("/ping", handle_ping)  # Endpoint di test
+    app.router.add_get("/metrics", handle_metrics)  # Endpoint per le metriche
+    app["db_pool"] = await connect_db()
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", PORT)
