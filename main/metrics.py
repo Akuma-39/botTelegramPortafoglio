@@ -38,7 +38,32 @@ async def calcola_metriche(pool):
     FROM utenti_corrente, utenti_precedente
                                           """)
 
+    # Transazioni per minuto
+    # Transazioni per minuto negli ultimi 3 giorni
+    transazioni_per_minuto = await pool.fetch("""
+        SELECT 
+            DATE_TRUNC('minute', data) AS minuto,
+            CASE WHEN importo < 0 THEN 'uscite' ELSE 'entrate' END AS tipo,
+            COUNT(*) AS conteggio
+        FROM transazioni
+        WHERE data >= CURRENT_DATE - INTERVAL '3 days'
+        GROUP BY minuto, tipo
+        ORDER BY minuto
+    """)
 
+    # Prepara i dati per il JSON
+    transazioni_minuto = []
+    for t in transazioni_per_minuto:
+        minuto = t["minuto"].isoformat()
+        tipo = t["tipo"]
+        conteggio = t["conteggio"]
+
+        # Cerca se il minuto esiste già nella lista
+        existing_entry = next((entry for entry in transazioni_minuto if entry["timestamp"] == minuto), None)
+        if existing_entry:
+            existing_entry[tipo] = conteggio
+        else:
+            transazioni_minuto.append({"timestamp": minuto, tipo: conteggio})
 
     # Numero totale di utenti
     utenti_totali = await pool.fetchval("SELECT COUNT(DISTINCT user_id) FROM transazioni")
@@ -52,6 +77,7 @@ async def calcola_metriche(pool):
         "uptime": str(datetime.datetime.now() - SERVER_UPTIME),
         "transazioni_oggi": {t["tipo"]: t["conteggio"] for t in transazioni_oggi},
         "utenti_attivi_oggi": utenti_attivi_oggi,
+        "transazioni_per_minuto": transazioni_minuto,
         "utenti_totali": utenti_totali,
         "crescita_utenti(%)": crescita_utenti,
     }
