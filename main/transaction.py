@@ -592,78 +592,78 @@ async def gestisci_categoria_start(update: Update, context: ContextTypes.DEFAULT
     return CATEGORIA
 
 # Aggiungi uno stato per la gestione delle categorie
-# GESTIONE_CATEGORIA = range(1)
+GESTIONE_CATEGORIA = range(1)
 
-# async def gestisci_categoria_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#     query = update.callback_query
-#     await query.answer()
+async def gestisci_categoria_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
 
-#     data = query.data
+    data = query.data
 
-#     # Log per debug
-#     print(f"Callback data ricevuto: {data}")
+    # Log per debug
+    print(f"Callback data ricevuto: {data}")
 
-#     # Gestione della selezione della categoria
-#     if data.startswith("gestisci_categoria_"):
-#         try:
-#             categoria_id = int(data.split("_")[2])  # Ottieni l'ID della categoria
-#             context.user_data['categoria_id'] = categoria_id
+    # Gestione della selezione della categoria
+    if data.startswith("gestisci_categoria_"):
+        try:
+            categoria_id = int(data.split("_")[2])  # Ottieni l'ID della categoria
+            context.user_data['categoria_id'] = categoria_id
 
-#             # Recupera il nome della categoria dal database
-#             pool = context.application.bot_data["db_pool"]
-#             categoria = await pool.fetchrow(
-#                 "SELECT nome FROM categorie WHERE id = $1",
-#                 categoria_id
-#             )
+            # Recupera il nome della categoria dal database
+            pool = context.application.bot_data["db_pool"]
+            categoria = await pool.fetchrow(
+                "SELECT nome FROM categorie WHERE id = $1",
+                categoria_id
+            )
 
-#             if not categoria:
-#                 await query.edit_message_text("⚠️ Categoria non trovata!!")
-#                 return ConversationHandler.END
+            if not categoria:
+                await query.edit_message_text("⚠️ Categoria non trovata!!")
+                return ConversationHandler.END
 
-#             context.user_data['categoria_nome'] = categoria['nome']
+            context.user_data['categoria_nome'] = categoria['nome']
 
-#             # Mostra le opzioni di gestione
-#             keyboard = [
-#                 [InlineKeyboardButton("✏️ Modifica", callback_data="modifica_categoria"),
-#                  InlineKeyboardButton("🗑️ Elimina", callback_data="elimina_categoria")]
-#             ]
-#             reply_markup = InlineKeyboardMarkup(keyboard)
+            # Mostra le opzioni di gestione
+            keyboard = [
+                [InlineKeyboardButton("✏️ Modifica", callback_data="modifica_categoria"),
+                 InlineKeyboardButton("🗑️ Elimina", callback_data="elimina_categoria")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
 
-#             await query.edit_message_text(
-#                 f"🔍 *Hai selezionato la categoria:* {categoria['nome']}\n\n"
-#                 "Cosa vuoi fare?",
-#                 reply_markup=reply_markup,
-#                 parse_mode="Markdown"
-#             )
-#             return GESTIONE_CATEGORIA
-#         except (IndexError, ValueError):
-#             await query.edit_message_text("⚠️ Errore: Formato del callback non valido.")
-#             return ConversationHandler.END
+            await query.edit_message_text(
+                f"🔍 *Hai selezionato la categoria:* {categoria['nome']}\n\n"
+                "Cosa vuoi fare?",
+                reply_markup=reply_markup,
+                parse_mode="Markdown"
+            )
+            return GESTIONE_CATEGORIA
+        except (IndexError, ValueError):
+            await query.edit_message_text("⚠️ Errore: Formato del callback non valido.")
+            return ConversationHandler.END
 
-#     # Gestione della modifica della categoria
-#     elif data == "modifica_categoria":
-#         # Controlla se l'utente sta già modificando una categoria
-#         if 'categoria_id' in context.user_data:
-#             await query.edit_message_text("✏️ Scrivi il nuovo nome della categoria:")
-#             return NOME_CATEGORIA
-#         else:
-#             await query.edit_message_text("⚠️ Errore: Nessuna categoria selezionata per la modifica.")
-#             return ConversationHandler.END
+    # Gestione della modifica della categoria
+    elif data == "modifica_categoria":
+        # Controlla se l'utente sta già modificando una categoria
+        if 'categoria_id' in context.user_data:
+            await query.edit_message_text("✏️ Scrivi il nuovo nome della categoria:")
+            return NOME_CATEGORIA
+        else:
+            await query.edit_message_text("⚠️ Errore: Nessuna categoria selezionata per la modifica.")
+            return ConversationHandler.END
 
-#     # Gestione dell'eliminazione della categoria
-#     elif data == "elimina_categoria":
-#         categoria_id = context.user_data.get('categoria_id')
-#         if categoria_id:
-#             pool = context.application.bot_data["db_pool"]
-#             try:
-#                 await pool.execute("DELETE FROM categorie WHERE id = $1", categoria_id)
-#                 await query.edit_message_text("🗑️ Categoria eliminata con successo!")
-#             except asyncpg.ForeignKeyViolationError:
-#                 await query.edit_message_text("⚠️ Errore: Non puoi eliminare una categoria associata a transazioni.")
-#         else:
-#             await query.edit_message_text("⚠️ Errore: Nessuna categoria selezionata per l'eliminazione.")
-#             return ConversationHandler.END
-#         return ConversationHandler.END
+    # Gestione dell'eliminazione della categoria
+    elif data == "elimina_categoria":
+        categoria_id = context.user_data.get('categoria_id')
+        if categoria_id:
+            pool = context.application.bot_data["db_pool"]
+            try:
+                await pool.execute("DELETE FROM categorie WHERE id = $1", categoria_id)
+                await query.edit_message_text("🗑️ Categoria eliminata con successo!")
+            except asyncpg.ForeignKeyViolationError:
+                await query.edit_message_text("⚠️ Errore: Non puoi eliminare una categoria associata a transazioni.")
+        else:
+            await query.edit_message_text("⚠️ Errore: Nessuna categoria selezionata per l'eliminazione.")
+            return ConversationHandler.END
+        return ConversationHandler.END
 
 
 
