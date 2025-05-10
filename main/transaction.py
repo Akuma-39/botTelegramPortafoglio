@@ -515,16 +515,17 @@ async def grafico(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Scegli il tipo di grafico che vuoi visualizzare:",
         reply_markup=reply_markup
     )
+    
 # Funzione per generare il grafico a torta
 async def grafico_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()  # Rispondi al callback per evitare timeout
     if query.data == "grafico_spese":
-        await query.edit_message_text("📉 Funzione da implementare...")
-        return
+        await query.edit_message_text("📉 Generando il grafico delle sole spese per categoria...")
+        await grafico_spese(update, context)
     elif query.data == "grafico_entrate":
-        await query.edit_message_text("📈 Funzione da implementare...")
-        return
+        await query.edit_message_text("📈 Generando il grafico delle sole entrate per categoria...")
+        await grafico_entrate(update, context)
     elif query.data == "grafico_generale":
         await query.edit_message_text("📊 Generando il grafico generale...")
         await grafico_generale(update, context)
@@ -580,6 +581,101 @@ async def grafico_generale(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Invia il grafico all'utente
     await update.callback_query.message.reply_photo(photo=buffer, caption="📊 Ecco il grafico delle tue finanze!")
+
+async def grafico_spese(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    pool = context.application.bot_data["db_pool"]
+
+    # Recupera le spese dal database, raggruppate per categoria
+    spese_per_categoria = await pool.fetch("""
+        SELECT c.nome AS categoria, SUM(t.importo) AS totale
+        FROM transazioni t
+        LEFT JOIN categorie c ON t.categoria_id = c.id
+        WHERE t.user_id = $1 AND t.importo < 0
+        GROUP BY c.nome
+        ORDER BY totale
+    """, user_id)
+
+    if not spese_per_categoria:
+        await update.callback_query.message.reply_text("📉 Nessuna spesa trovata per generare il grafico.")
+        return
+
+    # Prepara i dati per il grafico
+    categorie = [s["categoria"] or "Senza Categoria" for s in spese_per_categoria]
+    valori = [abs(float(s["totale"])) for s in spese_per_categoria]
+
+    # Genera il grafico a torta
+    plt.figure(figsize=(6, 6))
+    wedges, texts, autotexts = plt.pie(
+        valori,
+        labels=categorie,
+        autopct="%1.1f%%",
+        startangle=90,
+        colors=plt.cm.Paired.colors
+    )
+    plt.title("Spese per Categoria")
+
+    # Personalizza lo stile delle etichette
+    for text in autotexts:
+        text.set_color("white")
+        text.set_fontsize(10)
+
+    # Salva il grafico in un buffer
+    buffer = io.BytesIO()
+    plt.savefig(buffer, format="png")
+    buffer.seek(0)
+    plt.close()
+
+    # Invia il grafico all'utente
+    await update.callback_query.message.reply_photo(photo=buffer, caption="📉 Ecco il grafico delle tue spese per categoria!")
+
+
+async def grafico_entrate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    pool = context.application.bot_data["db_pool"]
+
+    # Recupera le entrate dal database, raggruppate per categoria
+    entrate_per_categoria = await pool.fetch("""
+        SELECT c.nome AS categoria, SUM(t.importo) AS totale
+        FROM transazioni t
+        LEFT JOIN categorie c ON t.categoria_id = c.id
+        WHERE t.user_id = $1 AND t.importo > 0
+        GROUP BY c.nome
+        ORDER BY totale
+    """, user_id)
+
+    if not entrate_per_categoria:
+        await update.callback_query.message.reply_text("📈 Nessuna entrata trovata per generare il grafico.")
+        return
+
+    # Prepara i dati per il grafico
+    categorie = [e["categoria"] or "Senza Categoria" for e in entrate_per_categoria]
+    valori = [float(e["totale"]) for e in entrate_per_categoria]
+
+    # Genera il grafico a torta
+    plt.figure(figsize=(6, 6))
+    wedges, texts, autotexts = plt.pie(
+        valori,
+        labels=categorie,
+        autopct="%1.1f%%",
+        startangle=90,
+        colors=plt.cm.Paired.colors
+    )
+    plt.title("Entrate per Categoria")
+
+    # Personalizza lo stile delle etichette
+    for text in autotexts:
+        text.set_color("white")
+        text.set_fontsize(10)
+
+    # Salva il grafico in un buffer
+    buffer = io.BytesIO()
+    plt.savefig(buffer, format="png")
+    buffer.seek(0)
+    plt.close()
+
+    # Invia il grafico all'utente
+    await update.callback_query.message.reply_photo(photo=buffer, caption="📈 Ecco il grafico delle tue entrate per categoria!")
 
 async def aggiungi_categoria(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
