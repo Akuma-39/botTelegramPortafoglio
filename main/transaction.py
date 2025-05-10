@@ -758,22 +758,37 @@ async def main():
     fallbacks=[CommandHandler("annulla", annulla)],
     ))
     
+    # GESTIONE CATEGORIE
     app.add_handler(ConversationHandler(
-        entry_points=[CallbackQueryHandler(gestisci_categoria_callback)],
+        entry_points=[
+            CallbackQueryHandler(gestisci_categoria_callback, pattern=r"^gestisci_categoria_\d+$")
+        ],
         states={
-            GESTIONE_CATEGORIA: [CallbackQueryHandler(gestisci_categoria_callback)],
-            NOME_CATEGORIA: [MessageHandler(filters.TEXT & ~filters.COMMAND, modifica_categoria_nome)],
+            GESTIONE_CATEGORIA: [
+                CallbackQueryHandler(gestisci_categoria_callback, pattern=r"^(modifica_categoria|elimina_categoria|gestisci_categoria_\d+)$")
+            ],
+            NOME_CATEGORIA: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, modifica_categoria_nome)
+            ],
         },
         fallbacks=[CommandHandler("annulla", annulla)],
         per_message=False,
     ))
 
+    # GESTIONE TRANSAZIONI
     app.add_handler(ConversationHandler(
-        entry_points=[CallbackQueryHandler(gestisci_callback)],
-        states={IMPORTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, aggiorna_transazione)]},
+        entry_points=[
+            CallbackQueryHandler(gestisci_callback, pattern=r"^gestisci_\d+$")
+        ],
+        states={
+            IMPORTO: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, aggiorna_transazione)
+            ],
+        },
         fallbacks=[CommandHandler("annulla", annulla)],
         per_message=False,
     ))
+
 
     app.add_handler(ConversationHandler(
         entry_points=[CommandHandler("aggiungi_categoria", aggiungi_categoria_start)],
