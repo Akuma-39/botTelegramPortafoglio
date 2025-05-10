@@ -757,6 +757,16 @@ async def main():
     },
     fallbacks=[CommandHandler("annulla", annulla)],
     ))
+    
+    app.add_handler(ConversationHandler(
+        entry_points=[CallbackQueryHandler(gestisci_categoria_callback)],
+        states={
+            GESTIONE_CATEGORIA: [CallbackQueryHandler(gestisci_categoria_callback)],
+            NOME_CATEGORIA: [MessageHandler(filters.TEXT & ~filters.COMMAND, modifica_categoria_nome)],
+        },
+        fallbacks=[CommandHandler("annulla", annulla)],
+        per_message=False,
+    ))
 
     app.add_handler(ConversationHandler(
         entry_points=[CallbackQueryHandler(gestisci_callback)],
@@ -773,15 +783,6 @@ async def main():
         fallbacks=[CommandHandler("annulla", annulla)],
     ))
 
-    app.add_handler(ConversationHandler(
-        entry_points=[CallbackQueryHandler(gestisci_categoria_callback)],
-        states={
-            GESTIONE_CATEGORIA: [CallbackQueryHandler(gestisci_categoria_callback)],
-            NOME_CATEGORIA: [MessageHandler(filters.TEXT & ~filters.COMMAND, modifica_categoria_nome)],
-        },
-        fallbacks=[CommandHandler("annulla", annulla)],
-        per_message=False,
-    ))
 
     # Avvia il bot con polling
     print("🚀 Avvio del bot in modalità polling...")
