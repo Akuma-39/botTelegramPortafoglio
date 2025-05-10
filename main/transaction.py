@@ -760,7 +760,8 @@ async def main():
         entry_points=[CommandHandler("aggiungi_carta", aggiungi_carta_start)],
         states={
             NOME_CARTA: [MessageHandler(filters.TEXT & ~filters.COMMAND, aggiungi_carta_nome)],
-        }
+        },
+        fallbacks=[CommandHandler("annulla", annulla)],
     ))
     app.add_handler(ConversationHandler(
         entry_points=[CommandHandler("aggiungi_categoria", aggiungi_categoria_start)],
