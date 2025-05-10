@@ -500,6 +500,11 @@ async def comando_non_riconosciuto(update: Update, context: ContextTypes.DEFAULT
 async def messaggio_generico(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⚠️ --- Non ho capito. Usa un comando come /spesa, /entrata o /riepilogo --- ⚠️")
 
+# Definisci etichette per grafici
+def format_labels(pct, all_vals):
+    absolute = int(round(pct / 100. * sum(all_vals)))
+    return f"{absolute} €\n({pct:.1f}%)"
+
 # Funzione per generare il grafico a torta
 async def grafico(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Crea la tastiera inline con le opzioni
@@ -551,11 +556,6 @@ async def grafico_generale(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Dati per il grafico
     labels = ['Spese', 'Entrate']
     valori = [abs(spese), entrate]
-
-    # Funzione per formattare le etichette con valori assoluti e percentuali
-    def format_labels(pct, all_vals):
-        absolute = int(round(pct / 100. * sum(all_vals)))
-        return f"{absolute} €\n({pct:.1f}%)"
 
     # Genera il grafico a torta
     plt.figure(figsize=(6, 6))
@@ -609,7 +609,7 @@ async def grafico_spese(update: Update, context: ContextTypes.DEFAULT_TYPE):
     wedges, texts, autotexts = plt.pie(
         valori,
         labels=categorie,
-        autopct="%1.1f%%",
+        autopct=lambda pct: format_labels(pct, valori),
         startangle=90,
         colors=plt.cm.Paired.colors
     )
@@ -657,7 +657,7 @@ async def grafico_entrate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     wedges, texts, autotexts = plt.pie(
         valori,
         labels=categorie,
-        autopct="%1.1f%%",
+        autopct=lambda pct: format_labels(pct, valori),
         startangle=90,
         colors=plt.cm.Paired.colors
     )
