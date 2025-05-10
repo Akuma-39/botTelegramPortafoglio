@@ -38,32 +38,45 @@ async def calcola_metriche(pool):
     FROM utenti_corrente, utenti_precedente
                                           """)
 
-    # Transazioni per minuto
-    # Transazioni per minuto negli ultimi 3 giorni
+    # Transazioni per minuto negli ultimi 2 giorni
     transazioni_per_minuto = await pool.fetch("""
         SELECT 
             DATE_TRUNC('minute', data) AS minuto,
             CASE WHEN importo < 0 THEN 'uscite' ELSE 'entrate' END AS tipo,
             COUNT(*) AS conteggio
         FROM transazioni
-        WHERE data >= CURRENT_DATE - INTERVAL '3 days'
+        WHERE data >= CURRENT_DATE - INTERVAL '2 days'
         GROUP BY minuto, tipo
         ORDER BY minuto
     """)
 
-    # Prepara i dati per il JSON
+   # Prepara i dati per il JSON con totali cumulativi
     transazioni_minuto = []
+    totale_entrate = 0
+    totale_uscite = 0
+
     for t in transazioni_per_minuto:
         minuto = t["minuto"].isoformat()
         tipo = t["tipo"]
         conteggio = t["conteggio"]
 
+        # Aggiorna i totali cumulativi
+        if tipo == "entrate":
+            totale_entrate += conteggio
+        elif tipo == "uscite":
+            totale_uscite += conteggio
+
         # Cerca se il minuto esiste già nella lista
         existing_entry = next((entry for entry in transazioni_minuto if entry["timestamp"] == minuto), None)
         if existing_entry:
-            existing_entry[tipo] = conteggio
+            existing_entry["entrate"] = totale_entrate
+            existing_entry["uscite"] = totale_uscite
         else:
-            transazioni_minuto.append({"timestamp": minuto, tipo: conteggio})
+            transazioni_minuto.append({
+                "timestamp": minuto,
+                "entrate": totale_entrate,
+                "uscite": totale_uscite
+            })
 
     # Numero totale di utenti
     utenti_totali = await pool.fetchval("SELECT COUNT(DISTINCT user_id) FROM transazioni")
