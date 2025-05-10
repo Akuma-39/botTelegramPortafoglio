@@ -1,6 +1,5 @@
 from ast import Call
 from importlib.metadata import EntryPoint
-from select import kevent
 from matplotlib.backend_bases import key_press_handler
 from matplotlib.pylab import rand
 from telegram import Bot, Update, BotCommand, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
