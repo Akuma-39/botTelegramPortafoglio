@@ -477,7 +477,7 @@ async def riepilogo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         FROM transazioni t
         LEFT JOIN categorie c ON t.categoria_id = c.id
         LEFT JOIN carte ca ON t.metodoPagamento = ca.id
-        WHERE t.user_id = $1 AND t.data >= NOW() - INTERVAL '$2 days'
+        WHERE t.user_id = $1 AND t.data >= $2
         ORDER BY t.data DESC """, user_id, data_inizio)
 
 
