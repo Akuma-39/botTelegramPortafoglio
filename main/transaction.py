@@ -15,6 +15,8 @@ import asyncio  # Importa asyncio per gestire l'event loop
 import nest_asyncio
 import matplotlib.pyplot as plt
 from metrics import handle_metrics
+from datetime import datetime, timedelta
+
 
 # Applica nest_asyncio per evitare conflitti con l'event loop
 nest_asyncio.apply()
@@ -463,6 +465,9 @@ async def riepilogo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Formato non valido. Usa /riepilogo [giorni] per specificare il numero di giorni.")
         return
 
+     # Calcola la data di inizio
+    data_inizio = datetime.now() - timedelta(days=giorni)
+
     transazioni = await pool.fetch("""
         SELECT 
             t.descrizione, 
@@ -473,7 +478,7 @@ async def riepilogo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         LEFT JOIN categorie c ON t.categoria_id = c.id
         LEFT JOIN carte ca ON t.metodoPagamento = ca.id
         WHERE t.user_id = $1 AND t.data >= NOW() - INTERVAL '$2 days'
-        ORDER BY t.data DESC """, user_id, giorni)
+        ORDER BY t.data DESC """, user_id, data_inizio)
 
 
     if not transazioni:
