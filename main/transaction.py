@@ -101,7 +101,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Ecco cosa puoi fare:\n"
         "• /spesa - Aggiungi una spesa\n"
         "• /entrata - Aggiungi un'entrata\n"
-        "• /riepilogo - Mostra il riepilogo delle tue transazioni\n"
+        "• /riepilogo [giorni] - Mostra il riepilogo delle tue transazioni negli ultimi [giorni] (se non specificato 30gg)\n"
         "• /gestisci - Modifica o elimina una transazione\n"
         "• /esporta - Esporta le tue transazioni\n\n"
         "• /grafico - Visualizza il grafico delle tue finanze\n\n"
@@ -457,6 +457,12 @@ async def riepilogo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     pool = context.application.bot_data["db_pool"]
 
+    try:
+        giorni = int(context.args[0]) if context.args else 30
+    except ValueError:
+        await update.message.reply_text("❌ Formato non valido. Usa /riepilogo [giorni] per specificare il numero di giorni.")
+        return
+
     transazioni = await pool.fetch("""
         SELECT 
             t.descrizione, 
@@ -466,12 +472,12 @@ async def riepilogo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         FROM transazioni t
         LEFT JOIN categorie c ON t.categoria_id = c.id
         LEFT JOIN carte ca ON t.metodoPagamento = ca.id
-        WHERE t.user_id = $1
-        ORDER BY t.data DESC """, user_id)
+        WHERE t.user_id = $1 AND t.data >= NOW() - INTERVAL '$2 days'
+        ORDER BY t.data DESC """, user_id, giorni)
 
 
     if not transazioni:
-        await update.message.reply_text("📂 *Nessuna transazione registrata.*", parse_mode="Markdown")
+        await update.message.reply_text("📂 *Nessuna transazione registrata. Negli ultimi {giorni} giorni*", parse_mode="Markdown")
         return
     # Calcola il totale delle spese e delle entrate
     totale = sum(t['importo'] for t in transazioni)
@@ -483,7 +489,7 @@ async def riepilogo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ])
     # Invia il messaggio di riepilogo
     await update.message.reply_text(
-        f"📊 *Riepilogo delle tue transazioni:*\n\n{lista}\n\n"
+        f"📊 *Riepilogo delle tue transazioni (negli ultimi {giorni}gg):*\n\n{lista}\n\n"
         f"💼 *Totale*: {totale:.2f} €",
         parse_mode="Markdown"
     )
