@@ -514,8 +514,9 @@ async def mostra_riepilogo_generale(query, pool, user_id):
     if not transazioni:
         await query.edit_message_text("📂 Nessuna transazione trovata.")
         return
+    totale = sum(float(t['importo']) for t in transazioni)
     testo = "\n".join([f"• {t['descrizione']}: {t['importo']:.2f} € ({t['data'].strftime('%d/%m/%Y')})" for t in transazioni])
-    await query.edit_message_text(f"📊 Tutte le transazioni:\n\n{testo}")
+    await query.edit_message_text(f"📊 Tutte le transazioni:\n\n{testo}\n\n<b>Totale:</b> {totale:.2f} €", parse_mode="HTML")
 
 async def mostra_riepilogo_spese(query, pool, user_id):
     transazioni = await pool.fetch(
@@ -525,8 +526,9 @@ async def mostra_riepilogo_spese(query, pool, user_id):
     if not transazioni:
         await query.edit_message_text("📉 Nessuna spesa trovata.")
         return
+    totale = sum(float(t['importo']) for t in transazioni)
     testo = "\n".join([f"• {t['descrizione']}: {t['importo']:.2f} € ({t['data'].strftime('%d/%m/%Y')})" for t in transazioni])
-    await query.edit_message_text(f"📉 Solo spese:\n\n{testo}")
+    await query.edit_message_text(f"📉 Solo spese:\n\n{testo}\n\n<b>Totale spese:</b> {totale:.2f} €", parse_mode="HTML")
 
 async def mostra_riepilogo_entrate(query, pool, user_id):
     transazioni = await pool.fetch(
@@ -536,8 +538,9 @@ async def mostra_riepilogo_entrate(query, pool, user_id):
     if not transazioni:
         await query.edit_message_text("📈 Nessuna entrata trovata.")
         return
+    totale = sum(float(t['importo']) for t in transazioni)
     testo = "\n".join([f"• {t['descrizione']}: {t['importo']:.2f} € ({t['data'].strftime('%d/%m/%Y')})" for t in transazioni])
-    await query.edit_message_text(f"📈 Solo entrate:\n\n{testo}")
+    await query.edit_message_text(f"📈 Solo entrate:\n\n{testo}\n\n<b>Totale entrate:</b> {totale:.2f} €", parse_mode="HTML")
 
 async def mostra_riepilogo_per_categoria(query, pool, user_id, categoria_id):
     transazioni = await pool.fetch(
@@ -547,8 +550,9 @@ async def mostra_riepilogo_per_categoria(query, pool, user_id, categoria_id):
     if not transazioni:
         await query.edit_message_text("📋 Nessuna transazione trovata per questa categoria.")
         return
+    totale = sum(float(t['importo']) for t in transazioni)
     testo = "\n".join([f"• {t['descrizione']}: {t['importo']:.2f} € ({t['data'].strftime('%d/%m/%Y')})" for t in transazioni])
-    await query.edit_message_text(f"📋 Transazioni per questa categoria:\n\n{testo}")
+    await query.edit_message_text(f"📋 Transazioni per questa categoria:\n\n{testo}\n\n<b>Totale categoria:</b> {totale:.2f} €", parse_mode="HTML")
 
 # Catch comandi non validi
 async def comando_non_riconosciuto(update: Update, context: ContextTypes.DEFAULT_TYPE):
