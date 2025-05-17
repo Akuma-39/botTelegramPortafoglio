@@ -456,49 +456,99 @@ async def annulla(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # /riepilogo
 async def riepilogo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+    keyboard = [
+        [InlineKeyboardButton("📊 Tutte", callback_data="riepilogo_generale")],
+        [InlineKeyboardButton("📊 Categoria", callback_data="riepilogo_categorie")],
+        [InlineKeyboardButton("📉 Spese", callback_data="riepilogo_spese")],
+        [InlineKeyboardButton("📈 Entrate", callback_data="riepilogo_entrate")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        "Scegli il tipo di riepilogo che vuoi visualizzare:",
+        reply_markup=reply_markup
+    )
+# Callback per il riepilogo
+async def riepilogo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
     pool = context.application.bot_data["db_pool"]
 
-    try:
-        giorni = int(context.args[0]) if context.args else 30
-    except ValueError:
-        await update.message.reply_text("❌ Formato non valido. Usa /riepilogo [giorni] per specificare il numero di giorni.")
-        return
+    if query.data == "riepilogo_generale":
+        # Mostra tutte le transazioni (puoi riutilizzare la logica già presente)
+        await query.edit_message_text("📊 Riepilogo di tutte le transazioni in arrivo...")
+        await mostra_riepilogo_generale(query, pool, user_id)
+    elif query.data == "riepilogo_spese":
+        await query.edit_message_text("📉 Riepilogo delle sole spese in arrivo...")
+        await mostra_riepilogo_spese(query, pool, user_id)
+    elif query.data == "riepilogo_entrate":
+        await query.edit_message_text("📈 Riepilogo delle sole entrate in arrivo...")
+        await mostra_riepilogo_entrate(query, pool, user_id)
+    elif query.data == "riepilogo_categorie":
+        # Mostra la tastiera con le categorie
+        categorie = await pool.fetch(
+            "SELECT id, nome FROM categorie WHERE user_id = $1 ORDER BY nome",
+            user_id
+        )
+        if not categorie:
+            await query.edit_message_text("📂 Non hai ancora creato categorie.")
+            return
+        keyboard = [
+            [InlineKeyboardButton(c['nome'], callback_data=f"riepilogo_categoria_{c['id']}")]
+            for c in categorie
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            "📋 Scegli una categoria:",
+            reply_markup=reply_markup
+        )
+    elif query.data.startswith("riepilogo_categoria_"):
+        categoria_id = int(query.data.split("_")[-1])
+        await mostra_riepilogo_per_categoria(query, pool, user_id, categoria_id)
 
-     # Calcola la data di inizio
-    data_inizio = datetime.now() - timedelta(days=giorni)
-
-    transazioni = await pool.fetch("""
-        SELECT 
-            t.descrizione, 
-            t.importo, 
-            c.nome AS categoria, 
-            ca.nome AS carta
-        FROM transazioni t
-        LEFT JOIN categorie c ON t.categoria_id = c.id
-        LEFT JOIN carte ca ON t.metodoPagamento = ca.id
-        WHERE t.user_id = $1 AND t.data >= $2
-        ORDER BY t.data DESC """, user_id, data_inizio)
-
-
-    if not transazioni:
-        await update.message.reply_text("📂 *Nessuna transazione registrata. Negli ultimi {giorni} giorni*", parse_mode="Markdown")
-        return
-    # Calcola il totale delle spese e delle entrate
-    totale = sum(t['importo'] for t in transazioni)
-    # Crea la lista delle transazioni
-    lista = "\n".join([
-        f"• *{t['descrizione']}*: {'-' if t['importo'] < 0 else ''}{abs(t['importo']):.2f} €\n"
-        f"  Categoria: {t['categoria'] or 'Nessuna'} | Carta: {t['carta'] or 'Nessuna'}"
-        for t in transazioni
-    ])
-    # Invia il messaggio di riepilogo
-    await update.message.reply_text(
-        f"📊 *Riepilogo delle tue transazioni (negli ultimi {giorni}gg):*\n\n{lista}\n\n"
-        f"💼 *Totale*: {totale:.2f} €",
-        parse_mode="Markdown"
+async def mostra_riepilogo_generale(query, pool, user_id):
+    transazioni = await pool.fetch(
+        "SELECT descrizione, importo, data FROM transazioni WHERE user_id = $1 ORDER BY data DESC",
+        user_id
     )
+    if not transazioni:
+        await query.edit_message_text("📂 Nessuna transazione trovata.")
+        return
+    testo = "\n".join([f"• {t['descrizione']}: {t['importo']:.2f} € ({t['data'].strftime('%d/%m/%Y')})" for t in transazioni])
+    await query.edit_message_text(f"📊 Tutte le transazioni:\n\n{testo}")
 
+async def mostra_riepilogo_spese(query, pool, user_id):
+    transazioni = await pool.fetch(
+        "SELECT descrizione, importo, data FROM transazioni WHERE user_id = $1 AND importo < 0 ORDER BY data DESC",
+        user_id
+    )
+    if not transazioni:
+        await query.edit_message_text("📉 Nessuna spesa trovata.")
+        return
+    testo = "\n".join([f"• {t['descrizione']}: {t['importo']:.2f} € ({t['data'].strftime('%d/%m/%Y')})" for t in transazioni])
+    await query.edit_message_text(f"📉 Solo spese:\n\n{testo}")
+
+async def mostra_riepilogo_entrate(query, pool, user_id):
+    transazioni = await pool.fetch(
+        "SELECT descrizione, importo, data FROM transazioni WHERE user_id = $1 AND importo > 0 ORDER BY data DESC",
+        user_id
+    )
+    if not transazioni:
+        await query.edit_message_text("📈 Nessuna entrata trovata.")
+        return
+    testo = "\n".join([f"• {t['descrizione']}: {t['importo']:.2f} € ({t['data'].strftime('%d/%m/%Y')})" for t in transazioni])
+    await query.edit_message_text(f"📈 Solo entrate:\n\n{testo}")
+
+async def mostra_riepilogo_per_categoria(query, pool, user_id, categoria_id):
+    transazioni = await pool.fetch(
+        "SELECT descrizione, importo, data FROM transazioni WHERE user_id = $1 AND categoria_id = $2 ORDER BY data DESC",
+        user_id, categoria_id
+    )
+    if not transazioni:
+        await query.edit_message_text("📋 Nessuna transazione trovata per questa categoria.")
+        return
+    testo = "\n".join([f"• {t['descrizione']}: {t['importo']:.2f} € ({t['data'].strftime('%d/%m/%Y')})" for t in transazioni])
+    await query.edit_message_text(f"📋 Transazioni per questa categoria:\n\n{testo}")
 
 # Catch comandi non validi
 async def comando_non_riconosciuto(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -903,6 +953,8 @@ async def main():
     },
     fallbacks=[CommandHandler("annulla", annulla)],
     ))
+
+    app.add_handler(CallbackQueryHandler(riepilogo_callback, pattern="^riepilogo_"))
 
     app.add_handler(ConversationHandler(
     entry_points=[CommandHandler("entrata", entrata_start)],
